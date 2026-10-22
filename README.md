@@ -2,55 +2,81 @@
 
 > **Accessible, elder-friendly fraud protection for WhatsApp, SMS, and email messages in India.**
 
-Scam Shield is an AI-powered safety tool built specifically for parents, grandparents, and first-time smartphone users across India. It analyzes suspicious messages in English, Hindi, and Hinglish to detect common Indian cyber scams — such as electricity bill disconnection threats, fake bank KYC APK downloads, WhatsApp lottery fraud, and "Digital Arrest" impersonation.
+Scam Shield is a fraud-prevention safety tool built specifically for parents, grandparents, and first-time smartphone users across India. It analyzes suspicious messages in English, Hindi, and Hinglish to detect common Indian cyber scams — such as electricity bill disconnection threats, fake bank KYC APK downloads, WhatsApp lottery fraud, and "Digital Arrest" impersonation.
+
+Live Web App: [https://ideaforge-scam-shield.streamlit.app/](https://ideaforge-scam-shield.streamlit.app/)
 
 ---
 
-## 🚀 Quick Start Guide (For Beginners)
+## 👥 Using Scam Shield (For Public Users)
 
-Follow these simple steps to run Scam Shield on your computer.
+**Ordinary visitors and end users do NOT need an API key.** 
 
-### Step 1: Open Terminal / PowerShell in this folder
-Ensure your terminal is inside the `scam-shield` directory:
-```powershell
-cd scam-shield
-```
+To analyze a message:
+1. Open [Scam Shield](https://ideaforge-scam-shield.streamlit.app/).
+2. Paste any suspicious message (or click one of the quick test sample buttons).
+3. Click **Analyse Message (संदेश की जांच करें)** to receive an instant, plain-language assessment and practical safety actions.
 
-### Step 2: (Optional but Recommended) Add Your Gemini API Key
-Scam Shield works out-of-the-box in **Rule-Based Heuristic Mode**, but adding a free Google Gemini API key enables deep AI reasoning with `gemini-3.5-flash-lite`.
+---
 
-1. Get a free API key at [Google AI Studio](https://aistudio.google.com/app/apikey).
-2. Copy the `.env.example` file and name the copy `.env`:
+## ⚙️ Configuration & Deployment Guide
+
+Scam Shield uses a secure, centralized API-key resolution system with an automatic rule-based offline fallback.
+
+### 🌐 Cloud Deployment (Streamlit Community Cloud)
+On deployed Streamlit environments, the application owner configures the Gemini API key centrally through server-side Secrets. Visitors never supply their own keys.
+
+1. Open your app dashboard on [Streamlit Community Cloud](https://share.streamlit.io/).
+2. Navigate to **App settings** → **Secrets**.
+3. Add your Gemini API key:
+   ```toml
+   GEMINI_API_KEY = "your_actual_gemini_api_key_here"
+   ```
+4. Save the secret. Streamlit securely injects this at runtime (`st.secrets["GEMINI_API_KEY"]`). No `.env` file is required on the hosting server.
+
+### 💻 Local Development Setup
+Developers running the app locally can configure their key using an untracked `.env` file:
+
+1. **Clone the repository and enter the directory**:
    ```powershell
-   Copy-Item .env.example .env
+   cd scam-shield
    ```
-3. Open `.env` in Notepad or your editor and replace `your_gemini_api_key_here` with your actual key:
-   ```env
-   GEMINI_API_KEY="AIzaSyYourActualKeyGoesHere"
+2. **Install dependencies**:
+   ```powershell
+   .venv\Scripts\pip install -r requirements.txt
    ```
-*(Note: You can also paste your key into the app's sidebar during your session without editing files).*
+3. **Configure your local environment key (optional)**:
+   - Copy `.env.example` to create your private `.env` file:
+     ```powershell
+     Copy-Item .env.example .env
+     ```
+   - Open `.env` and set your key:
+     ```env
+     GEMINI_API_KEY="your_actual_gemini_api_key_here"
+     ```
+   - *Security Note*: `.env` is strictly ignored by `.gitignore` and must **never** be committed to version control. Keep `.env.example` as a placeholder template only.
+4. **Launch the app**:
+   ```powershell
+   .venv\Scripts\streamlit run app.py
+   ```
 
-### Step 3: Run the Streamlit Application
-Run this exact command in your terminal:
-```powershell
-.venv\Scripts\streamlit run app.py
-```
-
-Your browser will automatically open to `http://localhost:8501`.
+### 🛡️ Automatic Heuristic Fallback
+If no API key is configured or the Gemini AI service is temporarily unavailable:
+- Scam Shield automatically switches to its built-in **Rule-Based Heuristic Engine**.
+- The app displays a clear notice: *"AI analysis is temporarily unavailable. Scam Shield is using its built-in rule-based checks."*
+- Full risk appraisal and India-specific scam pattern detection continue to function without crashing or blocking users.
 
 ---
 
-## 📁 Understanding the Project Files (Beginner-Friendly)
-
-Here is a simple explanation of every file in this repository:
+## 📁 Understanding the Project Files
 
 | File | What it does |
 | :--- | :--- |
-| **`app.py`** | The main application code. It contains the user interface (built with Streamlit), the transparent rule-based scam scanner, and the Gemini AI analysis integration. |
-| **`requirements.txt`** | A shopping list of Python packages needed for the app (`streamlit`, `google-genai`, `python-dotenv`, `pydantic`). |
-| **`.env.example`** | A template showing where your secret Gemini API key should go. It serves as a placeholder so you don't commit your real key to GitHub. |
-| **`.gitignore`** | Tells Git to ignore sensitive files (like your real `.env` key, the virtual environment `.venv/`, and temporary cache files). |
-| **`README.md`** | This guide! Contains setup instructions and system documentation. |
+| **`app.py`** | The main application code. It contains the user interface, centralized API-key loading, transparent rule-based heuristics, and Gemini AI analysis. |
+| **`requirements.txt`** | Python dependencies (`streamlit`, `google-genai`, `python-dotenv`, `pydantic`). |
+| **`.env.example`** | Safe template showing where local developers can configure `GEMINI_API_KEY`. Contains only placeholder values. |
+| **`.gitignore`** | Ensures sensitive files (local `.env`, `.streamlit/secrets.toml`, virtual environments `.venv/`, and caches) are never committed. |
+| **`README.md`** | Project documentation and configuration instructions. |
 
 ---
 
@@ -77,6 +103,7 @@ Scam Shield combines two layers of defense to protect users:
                                          ▼
                   ┌──────────────────────────────────────────────┐
                   │      2. Google Gemini 3.5 Flash Lite AI      │
+                  │  (Uses server secrets or local .env key)     │
                   │  • Evaluates context & nuanced phrasing      │
                   │  • Distinguishes real bank SMS from scams    │
                   │  • Outputs structured verdict + simple steps │
@@ -101,7 +128,7 @@ The message is immediately scanned for known scam indicators:
 - **Organization Impersonation**: State electricity boards (Mahavitaran, Bescom, BSES, etc.), major banks (SBI, HDFC), or law enforcement.
 
 ### 2. Gemini 3.5 Flash Lite Contextual Analysis
-Rule matches alone are **never** treated as definitive proof of a scam. For example, a real bank transaction SMS mentions a bank name and amount, but is completely legitimate. Gemini evaluates the full conversational context and returns a structured verdict.
+Rule matches alone are **never** treated as definitive proof of a scam. For example, a real bank transaction SMS mentions a bank name and amount, but is completely legitimate. When enabled, Gemini evaluates full conversational context and returns a structured verdict. If Gemini is unavailable, the rule-based heuristics serve as an instant, transparent fallback.
 
 ---
 
@@ -110,7 +137,7 @@ Rule matches alone are **never** treated as definitive proof of a scam. For exam
 1. **Cautious by Design**: If a message's intent is uncertain or incomplete, Scam Shield assigns **SUSPICIOUS** rather than SAFE.
 2. **Explicit SAFE Meaning**: A `SAFE` result explicitly means *no major warning signs were found in the supplied text*. It is **never** an absolute guarantee of sender legitimacy.
 3. **No False Authority**: Scam Shield never claims that any message has been verified or endorsed by a bank, police agency, or government department.
-4. **Zero-Storage Privacy**: Submitted text is processed in real time and is **never** logged, saved, or persisted.
+4. **Privacy-Conscious Processing**: Messages are processed in real time for fraud detection. When AI analysis is enabled, message content is evaluated via Google Gemini. Users are advised never to enter private credentials, full payment card numbers, or passwords.
 
 ---
 

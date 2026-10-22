@@ -336,24 +336,24 @@ Please provide your evaluation with a verdict of SCAM, SUSPICIOUS, or SAFE."""
             if err_code in [400, 401, 403] or any(k in err_msg.lower() for k in ["api_key_invalid", "api key not valid", "permission_denied"]):
                 return {
                     "error_type": "AUTH_ERROR",
-                    "error_title": "Invalid or Inactive API Key",
-                    "error_message": "Gemini rejected the API key. Please check your GEMINI_API_KEY in the .env file."
+                    "error_title": "Authentication Error",
+                    "error_message": "AI service could not authenticate."
                 }
 
             # 2. Unsupported Model (404)
             if err_code == 404 or any(k in err_msg.lower() for k in ["not found", "is not supported", "unsupported model"]):
                 return {
                     "error_type": "UNSUPPORTED_MODEL",
-                    "error_title": "Model Unsupported",
-                    "error_message": f"The model '{MODEL_NAME}' is not available or not supported on this API key/tier."
+                    "error_title": "Model Unavailable",
+                    "error_message": "The AI model is currently unavailable."
                 }
 
             # 3. Quota / Rate limit (429)
             if err_code == 429 or any(k in err_msg.lower() for k in ["resource_exhausted", "quota", "rate limit"]):
                 return {
                     "error_type": "RATE_LIMIT",
-                    "error_title": "Rate Limit / Quota Exceeded",
-                    "error_message": "Gemini API rate limit or quota reached. Please wait a moment before trying again."
+                    "error_title": "Service Busy",
+                    "error_message": "AI service is currently experiencing high demand. Please try again shortly."
                 }
 
             # 4. Timeout (408, 504)
@@ -361,7 +361,7 @@ Please provide your evaluation with a verdict of SCAM, SUSPICIOUS, or SAFE."""
                 last_error_dict = {
                     "error_type": "TIMEOUT",
                     "error_title": "Request Timed Out",
-                    "error_message": f"Gemini 3.5 Flash Lite did not respond within {REQUEST_TIMEOUT_MS // 1000} seconds."
+                    "error_message": "AI service did not respond within the expected time."
                 }
                 if attempt < MAX_RETRIES:
                     continue
@@ -371,18 +371,18 @@ Please provide your evaluation with a verdict of SCAM, SUSPICIOUS, or SAFE."""
             if err_code == 503 or "503" in err_msg or any(k in err_msg.lower() for k in ["high demand", "unavailable"]):
                 last_error_dict = {
                     "error_type": "SERVICE_UNAVAILABLE",
-                    "error_title": "Gemini 3.5 Flash Lite High Demand (503)",
-                    "error_message": "Gemini 3.5 Flash Lite is currently experiencing temporary high demand on Google servers. Please try again shortly."
+                    "error_title": "Service Unavailable",
+                    "error_message": "AI service is temporarily unavailable. Please try again shortly."
                 }
                 if attempt < MAX_RETRIES:
                     continue
                 return last_error_dict
 
-            # Other API Errors
+            # Other API Errors (never leak raw error messages or traces to users)
             last_error_dict = {
                 "error_type": "API_ERROR",
-                "error_title": "Gemini API Error",
-                "error_message": f"Google AI Service returned an error: {err_msg}"
+                "error_title": "AI Service Error",
+                "error_message": "AI service returned an unexpected response."
             }
             if attempt < MAX_RETRIES and err_code in [500, 502]:
                 continue
@@ -392,7 +392,7 @@ Please provide your evaluation with a verdict of SCAM, SUSPICIOUS, or SAFE."""
             last_error_dict = {
                 "error_type": "TIMEOUT",
                 "error_title": "Connection Timed Out",
-                "error_message": f"Network request timed out after {REQUEST_TIMEOUT_MS // 1000} seconds."
+                "error_message": "Network request to AI service timed out."
             }
             if attempt < MAX_RETRIES:
                 continue
@@ -402,17 +402,17 @@ Please provide your evaluation with a verdict of SCAM, SUSPICIOUS, or SAFE."""
             last_error_dict = {
                 "error_type": "NETWORK_ERROR",
                 "error_title": "Network Connection Error",
-                "error_message": "Could not connect to Google Generative AI servers. Please check your internet connection."
+                "error_message": "Could not connect to AI service. Please check your internet connection."
             }
             if attempt < MAX_RETRIES:
                 continue
             return last_error_dict
 
-        except Exception as e:
+        except Exception:
             last_error_dict = {
                 "error_type": "UNEXPECTED_ERROR",
                 "error_title": "Unexpected Error",
-                "error_message": f"An unexpected error occurred: {str(e)}"
+                "error_message": "An unexpected error occurred during AI analysis."
             }
             break
 
@@ -467,11 +467,15 @@ def analyze_heuristic_fallback(text: str, rule_signals: Dict[str, Any]) -> Dict[
         # Rule: If evidence is incomplete or uncertain, use SUSPICIOUS rather than SAFE!
         verdict = "SUSPICIOUS"
         scam_type = "Unverified Text (Heuristic Preview)"
-        explanation = "No obvious scam keywords were matched by the offline scanner, but deep AI verification is recommended to ensure safety."
-        flag_descriptions = ["No standard trigger keywords found by offline heuristics", "Full contextual intent could not be verified without Gemini AI"]
+        explanation = "No obvious scam keywords were matched by the built-in rule checks, but further verification is recommended to ensure safety."
+        flag_descriptions = [
+            "No standard trigger keywords matched by built-in heuristics",
+            "Contextual intent could not be evaluated by AI checks"
+        ]
         actions = [
-            "Configure your Gemini API key to run complete contextual intelligence.",
-            "Always verify independently through official apps rather than SMS links."
+            "Always verify independently through official apps rather than SMS links.",
+            "Never share OTPs, PINs, or passwords with unverified contacts.",
+            "If in doubt, consult a tech-savvy family member or call the 1930 Cyber Helpline."
         ]
         confidence = "LOW"
 
@@ -488,35 +492,36 @@ def analyze_heuristic_fallback(text: str, rule_signals: Dict[str, Any]) -> Dict[
 
 
 # ==============================================================================
-# 6. API KEY RESOLUTION (ENVIRONMENT -> STREAMLIT SECRETS -> SESSION)
+# 6. API KEY RESOLUTION (STREAMLIT SECRETS -> ENVIRONMENT / .ENV)
 # ==============================================================================
 
 def get_gemini_api_key() -> Optional[str]:
     """
     Safely retrieves the Gemini API key without logging or exposing it.
     Order of precedence:
-    1. Local .env file (via os.getenv)
-    2. Streamlit secrets (for cloud deployment)
-    3. User session state override (optional UI input)
+    1. Streamlit server-side secrets: st.secrets["GEMINI_API_KEY"] (for cloud deployment)
+    2. Environment variable: os.getenv("GEMINI_API_KEY") (including values from .env for local dev)
     """
-    load_dotenv(override=True)
-    # Check .env or local environment variable
-    key = os.getenv("GEMINI_API_KEY")
-    if key and key.strip() and key != "your_gemini_api_key_here":
-        return key.strip()
-
-    # Check Streamlit secrets (if deployed)
+    # 1. Streamlit server-side secrets (for cloud deployment)
     try:
         if "GEMINI_API_KEY" in st.secrets:
             sec_key = st.secrets["GEMINI_API_KEY"]
-            if sec_key and sec_key.strip():
-                return sec_key.strip()
+            if sec_key and str(sec_key).strip() and str(sec_key).strip() != "your_gemini_api_key_here":
+                return str(sec_key).strip()
     except Exception:
+        # Gracefully handle missing secrets.toml or Streamlit secrets errors without crashing
         pass
 
-    # Check session state (manual entry)
-    if "session_api_key" in st.session_state and st.session_state["session_api_key"].strip():
-        return st.session_state["session_api_key"].strip()
+    # 2. Environment variable / local .env file (for local development)
+    try:
+        env_key = os.getenv("GEMINI_API_KEY")
+        if not env_key or env_key.strip() == "your_gemini_api_key_here":
+            load_dotenv()
+            env_key = os.getenv("GEMINI_API_KEY")
+        if env_key and env_key.strip() and env_key.strip() != "your_gemini_api_key_here":
+            return env_key.strip()
+    except Exception:
+        pass
 
     return None
 
@@ -726,33 +731,13 @@ def render_app():
     if "message_input" not in st.session_state:
         st.session_state["message_input"] = ""
 
-    # Sidebar: API Key Configuration & Beginner Guide
+    # Sidebar: About Scam Shield, Helplines & Privacy Notice
     with st.sidebar:
-        st.header("⚙️ Settings & Setup")
-        configured_key = get_gemini_api_key()
-        
-        if configured_key:
-            st.success("✅ Gemini API Key is configured and active.")
-        else:
-            st.warning("⚠️ No Gemini API Key Detected")
-            st.markdown(
-                """
-                To activate Gemini AI analysis:
-                1. Get a free key at [Google AI Studio](https://aistudio.google.com/app/apikey).
-                2. Add `GEMINI_API_KEY="your_key"` to a `.env` file in this folder.
-                
-                *Or enter it below for this browser session:*
-                """
-            )
-            temp_key = st.text_input(
-                "Session API Key",
-                type="password",
-                placeholder="Paste AIzaSy... key",
-                help="This key is kept only in browser memory and is never saved to disk."
-            )
-            if temp_key:
-                st.session_state["session_api_key"] = temp_key.strip()
-                st.rerun()
+        st.header("🛡️ About Scam Shield")
+        st.markdown(
+            "Scam Shield is a free cyber safety assistant designed to help families in India "
+            "identify potential digital fraud, malicious links, and scam messages."
+        )
 
         st.markdown("---")
         st.markdown("### 🇮🇳 Emergency Indian Helplines")
@@ -762,11 +747,11 @@ def render_app():
         st.markdown("- **Banking Ombudsman**: Dial **14448**")
         
         st.markdown("---")
-        st.markdown("### 🔒 Privacy Commitment")
+        st.markdown("### 🔒 Privacy Notice")
         st.caption(
-            "We do not store, log, or persist the messages you submit. "
-            "External AI analysis occurs securely via Google Gemini. "
-            "Never share real bank passwords or Aadhaar numbers."
+            "Scam Shield processes submitted text in real time to assess fraud risk. "
+            "When AI analysis is active, text is evaluated using Google Gemini. "
+            "For your security, never paste passwords, MPINs, OTPs, or sensitive banking details."
         )
 
     # Hero Header
@@ -817,8 +802,9 @@ def render_app():
 
     # Privacy Callout
     st.caption(
-        "🔒 **Privacy Notice**: Messages are analyzed in real-time and are never stored or logged. "
-        "External AI processing is powered by Google Gemini."
+        "🔒 **Privacy Notice**: Messages are analyzed in real time. "
+        "When AI analysis is active, message content is evaluated using Google Gemini. "
+        "Never submit sensitive personal credentials like bank passwords, MPINs, or OTPs."
     )
 
     # Analyze Button
@@ -856,14 +842,11 @@ def render_app():
                     analysis["is_ai"] = False
                     analysis["fallback_reason"] = "No API Key Configured"
 
-            # Display clear error banner if Gemini call failed
-            if error_info:
-                st.error(f"❌ **{error_info['error_title']}**: {error_info['error_message']}")
-                st.warning("⚠️ **Heuristic Fallback Active**: Showing rule-based safety checks because AI analysis could not be completed. We never silently claim AI succeeded.")
-            elif not api_key:
+            # User-friendly notice when heuristic fallback was used
+            if not analysis.get("is_ai", False):
                 st.info(
-                    "💡 **Running in Heuristic Mode**: No Gemini API Key was found in `.env`. "
-                    "Displaying transparent rule-based scan results. Add your free key to `.env` to enable full Gemini 3.5 Flash Lite analysis!"
+                    "ℹ️ **Notice**: AI analysis is temporarily unavailable. "
+                    "Scam Shield is using its built-in rule-based checks."
                 )
 
             # ==============================================================================
