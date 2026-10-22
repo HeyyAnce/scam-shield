@@ -299,7 +299,7 @@ Please provide your evaluation with a verdict of SCAM, SUSPICIOUS, or SAFE."""
                 return {
                     "error_type": "EMPTY_RESPONSE",
                     "error_title": "Empty AI Response",
-                    "error_message": "Gemini returned an empty response. Please try again."
+                    "error_message": "AI service returned an empty response. Please try again."
                 }
 
             try:
@@ -308,7 +308,7 @@ Please provide your evaluation with a verdict of SCAM, SUSPICIOUS, or SAFE."""
                 return {
                     "error_type": "JSON_PARSE_ERROR",
                     "error_title": "Malformed AI Output",
-                    "error_message": "Gemini returned output that could not be parsed as structured JSON."
+                    "error_message": "AI service returned output that could not be parsed as structured JSON."
                 }
 
             # Validate fields
@@ -861,21 +861,20 @@ def render_app():
             is_ai = analysis.get("is_ai", False)
 
             # Visual styling depending on verdict and mode
-            mode_tag = "GEMINI 3.5 FLASH LITE" if is_ai else "HEURISTIC ANALYSIS"
             if verdict == "SCAM":
                 verdict_class = "verdict-scam"
                 verdict_icon = "🚨"
-                verdict_badge = f"HIGH DANGER - SCAM DETECTED ({mode_tag})"
+                verdict_badge = "HIGH DANGER - SCAM DETECTED"
             elif verdict == "SAFE":
                 verdict_class = "verdict-safe"
                 verdict_icon = "🛡️"
-                verdict_badge = f"NO MAJOR WARNING SIGNS FOUND ({mode_tag})"
+                verdict_badge = "NO MAJOR WARNING SIGNS FOUND"
             else: # SUSPICIOUS
                 verdict_class = "verdict-suspicious"
                 verdict_icon = "⚠️"
-                verdict_badge = f"SUSPICIOUS - PROCEED WITH CAUTION ({mode_tag})"
+                verdict_badge = "SUSPICIOUS - PROCEED WITH CAUTION"
 
-            mode_label = "🤖 AI Assisted (Gemini 3.5 Flash Lite)" if is_ai else "⚙️ Rule-Based Heuristics (Offline Fallback)"
+            mode_label = "🤖 AI Assisted" if is_ai else "⚙️ Rule-Based Heuristics (Offline Fallback)"
 
             # Sanitize all dynamic content to prevent HTML injection and layout breaks
             safe_verdict_badge = html.escape(str(verdict_badge))
@@ -957,7 +956,7 @@ def render_app():
             # ==============================================================================
             with st.expander("🔍 See Transparent Rule-Based Checks (पारदर्शी नियम जांच)"):
                 st.markdown(
-                    "Scam Shield runs direct heuristic checks for India-specific scam indicators before combining signals with Gemini AI:"
+                    "Scam Shield runs direct heuristic checks for India-specific scam indicators before combining signals with AI analysis:"
                 )
                 
                 checks = [
