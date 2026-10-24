@@ -41,18 +41,6 @@ def load_official_domain_lists() -> Tuple[Set[str], List[str]]:
     """
     domains: Set[str] = set()
     zones: List[str] = []
-    # Default core Indian domains (safety net if the file is missing)
-    core_domains = {
-        "sbi.co.in", "sbi.bank.in", "onlinesbi.sbi", "hdfcbank.com", "hdfc.bank.in",
-        "icicibank.com", "icici.bank.in", "axisbank.com", "axis.bank.in",
-        "pnbindia.in", "pnb.bank.in", "bankofbaroda.in", "bankofbaroda.bank.in",
-        "canarabank.com", "canarabank.bank.in", "unionbankofindia.co.in", "unionbankofindia.bank.in",
-        "kotak.com", "kotak.bank.in", "rbi.org.in", "npci.org.in", "phonepe.com",
-        "paytm.com", "google.com", "amazon.in", "cybercrime.gov.in", "sancharsaathi.gov.in",
-        "cert-in.org.in", "indiapost.gov.in", "uidai.gov.in", "incometax.gov.in"
-    }
-    domains.update(core_domains)
-
     if OFFICIAL_DOMAINS_PATH.exists():
         try:
             df = pd.read_csv(OFFICIAL_DOMAINS_PATH, encoding="utf-8-sig", dtype=str, keep_default_na=False)
@@ -227,8 +215,16 @@ class RuleEngine:
         ]
         cred_hits = []
         max_cred_sev = "LOW"
+        # A safety reminder is not a request for credentials. Only mask the
+        # reminder clause; a later demand must still be checked.
+        credential_name = r"(?:your\s+)?(?:otp(?:s)?|upi pin(?:s)?|mpin|atm pin|pin(?:s)?|cvv|netbanking password|password(?:s)?)\b"
+        credential_text = re.sub(
+            r"\b(?:do not|don't|never)\s+(?:share|disclose|give)\s+" + credential_name
+            + r"(?:(?:\s*,\s*(?:(?:or|and)\s+)?|\s+(?:or|and)\s+)" + credential_name + r")*",
+            "", lower,
+        )
         for pattern, description, sev in credential_patterns:
-            if re.search(pattern, lower):
+            if re.search(pattern, credential_text):
                 cred_hits.append(description)
                 if sev == "CRITICAL" or (sev == "HIGH" and max_cred_sev != "CRITICAL"):
                     max_cred_sev = sev

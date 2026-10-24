@@ -1,6 +1,6 @@
 """
 Reference Matcher for Scam Shield.
-Retrieves the most relevant verified training examples using multilingual token
+Retrieves the most relevant reference examples using multilingual token
 and character n-gram similarity. Strictly restricted to the train partition.
 """
 

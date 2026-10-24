@@ -20,6 +20,12 @@ Along with the result you see the warning signs, numbered steps to take, and how
 - You can paste messages in English, Hinglish or Hindi.
 - It reads the text only. It cannot tell who really sent a message, and it does not stop payments.
 
+### Read a screenshot (beta)
+
+Open **Upload a screenshot**, choose a PNG, JPG/JPEG or WebP image, and click **Extract text**. The image is sent to Google Gemini only when you click that button. Review and correct the text in the message box, then click **Check message** to run the normal checks.
+
+Uploads are limited to 5 MB and 16 megapixels. Remove private details before uploading. Damaged, unreadable or empty images show an error, never a safe verdict. Without the AI service, paste or type the message instead. Extraction can miss or misread words; there is no claimed language accuracy.
+
 ## How a message is checked
 
 1. **Rules** look for known scam signs: urgency and threats, requests for OTP or PIN, suspicious links and APK files, advance-fee and UPI tricks, and links that copy a real bank's name.
@@ -79,13 +85,26 @@ Visitors do not need a key of their own.
 | `src/gemini_client.py` | Talks to Gemini. |
 | `src/decision_engine.py` | Combines everything into one result. |
 | `src/config.py` | Settings and file paths. |
+| `src/image_reader.py` | Validates screenshots and extracts text for review. |
 | `data/dataset/` | The example messages, official websites and sources. |
 | `.streamlit/config.toml` | Page theme. |
 | `.env.example` | Template for the local `.env` file. |
 
 ## Privacy
 
-When the AI check is on, the text of your message is sent to Google Gemini. Do not paste passwords, PINs, OTPs or card numbers.
+When the AI check is on, the text of your message is sent to Google Gemini. Screenshot extraction also sends the selected image to Gemini. Images are processed in memory; this app does not save uploads to disk. Do not paste or upload passwords, PINs, OTPs or card numbers.
+
+## Short hackathon demo
+
+1. Choose **Electricity cut-off**, then **Check message**. Explain the warning signs and the three checks shown under the result.
+2. Choose **Real bank alert**. Explain that no clear scam signs does not prove who sent it.
+3. Enter an unclear message to show **Needs verification**. Results can vary when AI is used.
+4. Upload a clear screenshot, extract the text, correct it if needed, and run the check.
+5. Switch to Hindi and dark mode. Explain that offline explanations may remain in English.
+
+The 948 dataset messages are reference examples, mostly synthetic. Only the 662 train messages are searched. This is a hackathon prototype, not a trained fraud model, sender verification service, or guarantee of protection.
+
+If the live app is missing reference examples, confirm that `data/dataset` is deployed and that any `SCAM_SHIELD_DATASET_DIR` override points to real files. The detector cache follows dataset changes and expires after five minutes. Failed dataset loading is shown with a warning after analysis. After a deployment, reload the page; if an old process persists, reboot the app from Streamlit Community Cloud.
 
 ## If you have been scammed
 

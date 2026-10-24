@@ -81,7 +81,7 @@ class DecisionEngine:
             final_conf = ai_conf
 
             # GUARDRAIL 1: Critical Threat Safety Override
-            # If AI says SAFE, but rules found a verified CRITICAL indicator
+            # If AI says SAFE, but rules found a detected CRITICAL indicator
             # (.apk download, active OTP theft, UPI PIN inversion, Digital arrest)
             if ai_verdict == "SAFE" and rule_results.has_critical_indicators:
                 final_verdict = "SCAM"
@@ -101,7 +101,7 @@ class DecisionEngine:
                     "Block the sender number immediately and report to 1930 if money was lost.",
                 ]
                 final_conf = "HIGH"
-                notes.append("Safety Guardrail: Overrode AI SAFE verdict due to verified CRITICAL heuristic.")
+                notes.append("Safety Guardrail: Overrode AI SAFE verdict due to detected CRITICAL heuristic.")
 
             # GUARDRAIL 2: Hard Negative Legitimate Alert Reconciliation
             # If AI says SCAM or SUSPICIOUS, but rules confirmed an unequivocal hard-negative
@@ -176,7 +176,7 @@ class DecisionEngine:
         # Add dataset reference insight if available
         if dataset_matches.has_strong_match and dataset_matches.top_label:
             flag_descriptions.append(
-                f"📚 Similar verified case in dataset labeled as {dataset_matches.top_label} ({humanize_category(dataset_matches.top_category)})"
+                f"📚 Similar reference example labeled as {dataset_matches.top_label} ({humanize_category(dataset_matches.top_category)})"
             )
 
         # 1. Critical Threats or Direct Security Hazard (Safety Rule Override)
@@ -213,11 +213,12 @@ class DecisionEngine:
 
         # 3. Strong Dataset Reference Match
         elif dataset_matches.has_strong_match:
-            if dataset_matches.consensus_label == "SCAM" and not rule_results.is_hard_negative:
+            if (dataset_matches.consensus_label == "SCAM"
+                    and not rule_results.is_hard_negative and rule_results.net_risk_score >= 15):
                 verdict = "SCAM"
                 scam_type = humanize_category(dataset_matches.top_category)
                 explanation = (
-                    f"This message closely matches verified patterns of {humanize_category(dataset_matches.top_category).lower()} "
+                    f"This message closely matches reference examples of {humanize_category(dataset_matches.top_category).lower()} "
                     "catalogued in the Scam Shield reference dataset."
                 )
                 actions = [
@@ -273,10 +274,10 @@ class DecisionEngine:
                 actions = ["Routine alert. No immediate action required.", "Never share banking passwords or OTPs."]
                 confidence = "MEDIUM"
             else:
-                verdict = dataset_matches.top_label
+                verdict = "SUSPICIOUS"
                 scam_type = humanize_category(dataset_matches.top_category)
                 explanation = (
-                    f"This message exhibits characteristics of {humanize_category(dataset_matches.top_category).lower()}."
+                    "Similar examples were found, but they are not enough to confirm this message. Verify independently."
                 )
                 actions = ["Verify independently using official channels.", "Never share OTPs or passwords."]
                 confidence = "MEDIUM"

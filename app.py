@@ -7,12 +7,15 @@ ScamShieldPipeline.analyze(). Nothing is scored or invented here.
 
 import os
 import html
+import hashlib
+from pathlib import Path
 from typing import Optional
 
 import streamlit as st
 from dotenv import load_dotenv
 
 from src.pipeline import ScamShieldPipeline, PipelineOutput
+from src.image_reader import prepare_image, extract_text, ImageInputError
 
 load_dotenv(override=True)
 
@@ -1007,9 +1010,20 @@ summary:focus-visible, [tabindex]:focus-visible,
 """
 
 
-@st.cache_resource
 def get_pipeline() -> ScamShieldPipeline:
-    return ScamShieldPipeline()
+    # Adding or updating dataset files must replace a cached detector.
+    folder = Path(os.getenv("SCAM_SHIELD_DATASET_DIR") or Path(__file__).parent / "data" / "dataset")
+    signature = tuple(
+        (name, (folder / name).stat().st_mtime_ns, (folder / name).stat().st_size)
+        for name in ("messages_english.csv", "messages_hinglish.csv", "sources.csv", "legit_domains.csv")
+        if (folder / name).is_file()
+    )
+    return _cached_pipeline(str(folder.resolve()), signature)
+
+
+@st.cache_resource(ttl=300, max_entries=2)
+def _cached_pipeline(folder: str, signature: tuple) -> ScamShieldPipeline:
+    return ScamShieldPipeline(dataset_dir=Path(folder))
 
 
 def get_gemini_api_key() -> Optional[str]:
@@ -1093,15 +1107,81 @@ def on_check():
         s.empty, s.pending = False, True
 
 
+def on_text_change():
+    st.session_state.result = None
+    st.session_state.error = False
+    st.session_state.empty = False
+
+
+def render_screenshot_input():
+    s = st.session_state
+    hi = s.lang == "hi"
+    def label(en, hindi):
+        return hindi if hi else en
+    with st.expander(label("Upload a screenshot (beta)", "स्क्रीनशॉट अपलोड करें (बीटा)")):
+        st.caption(label(
+            "PNG, JPG or WebP, up to 5 MB. Crop out private details first. Clicking Extract text sends this image to Google Gemini. Review every word before checking; text extraction can make mistakes.",
+            "PNG, JPG या WebP, अधिकतम 5 MB। पहले निजी जानकारी हटा दें। टेक्स्ट निकालें दबाने पर तस्वीर Google Gemini को भेजी जाएगी। जाँच से पहले हर शब्द पढ़ें; टेक्स्ट निकालने में गलतियाँ हो सकती हैं।"))
+        upload = st.file_uploader(label("Choose screenshot", "स्क्रीनशॉट चुनें"),
+                                  type=["png", "jpg", "jpeg", "webp"], key="screenshot", max_upload_size=5)
+        data = upload.getvalue() if upload else None
+        digest = hashlib.sha256(data).hexdigest() if data else None
+        if digest != s.get("upload_digest"):
+            s.upload_digest = digest
+            s.ocr_error = None
+            s.ocr_ready = False
+            s.result, s.error, s.empty, s.pending = None, False, False, False
+            if s.get("input_from_image"):
+                s.message_input = ""
+                s.input_from_image = False
+        errors = {
+            "too_large": label("Image is too large. Use up to 5 MB and 16 megapixels.", "तस्वीर बहुत बड़ी है। अधिकतम 5 MB और 16 मेगापिक्सेल की तस्वीर चुनें।"),
+            "wrong_format": label("Use a PNG, JPG or WebP image.", "PNG, JPG या WebP तस्वीर चुनें।"),
+            "damaged": label("This image cannot be opened. Try another image or type the message.", "यह तस्वीर खुल नहीं रही। दूसरी तस्वीर चुनें या संदेश टाइप करें।"),
+            "blurry": label("The message is not clear enough to read safely. Upload a clearer screenshot or type it.", "संदेश साफ़ नहीं पढ़ा जा रहा। साफ़ स्क्रीनशॉट चुनें या संदेश टाइप करें।"),
+            "no_text": label("No readable message was found. Try another screenshot or type the message.", "पढ़ने योग्य संदेश नहीं मिला। दूसरा स्क्रीनशॉट चुनें या संदेश टाइप करें।"),
+            "failed": label("Text extraction failed. Try again, upload another image, or type the message.", "टेक्स्ट नहीं निकाला जा सका। फिर कोशिश करें, दूसरी तस्वीर चुनें या संदेश टाइप करें।"),
+            "unavailable": label("Screenshot reading is unavailable without the AI service. You can still paste or type a message below.", "AI सेवा के बिना स्क्रीनशॉट पढ़ना उपलब्ध नहीं है। नीचे संदेश पेस्ट या टाइप कर सकते हैं।"),
+        }
+        key = get_gemini_api_key()
+        if not key:
+            st.info(errors["unavailable"])
+        if data:
+            try:
+                png = prepare_image(data)
+                st.image(png, caption=label("Screenshot preview", "स्क्रीनशॉट का पूर्वावलोकन"), width=380)
+                if st.button(label("Extract text", "टेक्स्ट निकालें"), disabled=not key or s.pending):
+                    s.result, s.error, s.empty, s.pending = None, False, False, False
+                    s.ocr_ready, s.ocr_error = False, None
+                    if s.get("input_from_image"):
+                        s.message_input = ""
+                    with st.spinner(label("Reading screenshot…", "स्क्रीनशॉट पढ़ रहे हैं…")):
+                        result = extract_text(png, key)
+                    s.message_input = result.text.strip()
+                    s.input_from_image = True
+                    s.ocr_ready = True
+            except ImageInputError as exc:
+                s.ocr_error = str(exc)
+            if s.get("ocr_error"):
+                st.error(errors.get(s.ocr_error, errors["failed"]))
+            if s.get("ocr_ready"):
+                st.info(label("Review and edit the text below, then click Check message. No scam check has run yet.",
+                              "नीचे टेक्स्ट पढ़ें और सुधारें, फिर संदेश जाँचें दबाएँ। अभी स्कैम की जाँच नहीं हुई है।"))
+
+
 def on_clear():
     s = st.session_state
     s.message_input = ""
+    s.input_from_image = False
+    s.ocr_ready = False
     s.result, s.error, s.empty, s.pending = None, False, False, False
 
 
 def on_sample(name: str):
     s = st.session_state
     s.message_input = SAMPLE_MESSAGES[name]
+    s.input_from_image = False
+    s.ocr_ready = False
     s.result, s.error, s.empty, s.pending = None, False, False, False
 
 
@@ -1123,6 +1203,10 @@ def get_check_summary(out: PipelineOutput) -> str:
 
 
 def render_result(out: PipelineOutput):
+    if not get_pipeline().is_dataset_available:
+        st.warning("Reference examples could not be loaded. This check used the remaining available checks."
+                   if st.session_state.lang == "en" else
+                   "उदाहरण लोड नहीं हुए। यह परिणाम बाकी उपलब्ध जाँचों पर आधारित है।")
     key = str(out.verdict).upper().strip()
     if key not in ("SCAM", "SUSPICIOUS", "SAFE"):
         key = "SUSPICIOUS"
@@ -1366,11 +1450,13 @@ def render_app():
             unsafe_allow_html=True,
         )
 
+        render_screenshot_input()
         st.text_area(
             t("input_label"),
             key="message_input",
             height=170,
             placeholder=t("input_placeholder"),
+            on_change=on_text_change,
         )
         st.markdown(f'<p class="privacy">{esc(t("privacy_note"))}</p>', unsafe_allow_html=True)
 
