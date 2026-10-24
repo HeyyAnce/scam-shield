@@ -6,11 +6,11 @@ Distinguishes genuine threats from legitimate banking and transactional messages
 
 import re
 from pathlib import Path
-from typing import Dict, List, Any, Optional, Set
+from typing import Dict, List, Any, Optional, Set, Tuple
 import pandas as pd
 from pydantic import BaseModel, Field
 
-from src.config import OFFICIAL_DOMAINS_PATH
+from src.config import OFFICIAL_DOMAINS_PATH, USE_UNCHECKED_DOMAINS
 
 
 class RuleFinding(BaseModel):
@@ -33,10 +33,15 @@ class RuleAnalysisResult(BaseModel):
     hard_negative_reasons: List[str] = Field(default_factory=list)
 
 
-def load_official_domains() -> Set[str]:
-    """Loads verified banking and governmental domains to prevent false lookalike flags."""
-    domains = set()
-    # Default core Indian domains
+def load_official_domain_lists() -> Tuple[Set[str], List[str]]:
+    """
+    Loads official domains from data/dataset/legit_domains.csv.
+    Returns (exact_domains, zone_endings). Rows marked "unchecked" are skipped
+    unless USE_UNCHECKED_DOMAINS is True.
+    """
+    domains: Set[str] = set()
+    zones: List[str] = []
+    # Default core Indian domains (safety net if the file is missing)
     core_domains = {
         "sbi.co.in", "sbi.bank.in", "onlinesbi.sbi", "hdfcbank.com", "hdfc.bank.in",
         "icicibank.com", "icici.bank.in", "axisbank.com", "axis.bank.in",
@@ -50,27 +55,46 @@ def load_official_domains() -> Set[str]:
 
     if OFFICIAL_DOMAINS_PATH.exists():
         try:
-            df = pd.read_csv(OFFICIAL_DOMAINS_PATH, encoding="utf-8")
-            if "official_domain" in df.columns:
-                for d in df["official_domain"].dropna():
-                    domains.add(str(d).strip().lower())
-            if "secondary_domain" in df.columns:
-                for sec in df["secondary_domain"].dropna():
-                    for part in str(sec).split(";"):
-                        clean_part = part.strip().lower()
-                        if clean_part and clean_part != "none":
-                            domains.add(clean_part)
+            df = pd.read_csv(OFFICIAL_DOMAINS_PATH, encoding="utf-8-sig", dtype=str, keep_default_na=False)
+            for _, row in df.iterrows():
+                if row.get("status", "").strip().lower() != "checked" and not USE_UNCHECKED_DOMAINS:
+                    continue
+                dom = str(row.get("domain", "")).strip().lower()
+                if not dom:
+                    continue
+                if str(row.get("match_rule", "")).strip() == "ends_with_zone":
+                    zones.append(dom if dom.startswith(".") else "." + dom)
+                else:
+                    domains.add(dom)
         except Exception:
             pass
 
-    return domains
+    return domains, zones
+
+
+def load_official_domains() -> Set[str]:
+    """Exact official domains only (kept for compatibility)."""
+    return load_official_domain_lists()[0]
+
+
+def is_official_host(host: str, domains: Set[str], zones: List[str]) -> bool:
+    """
+    True only if the host IS an official domain, is a subdomain of one, or ends with an
+    official zone such as .bank.in. Never a "contains" match: sbi.co.in.fake-site.com is not official.
+    """
+    host = host.strip().lower().rstrip(".")
+    if host in domains:
+        return True
+    if any(host.endswith("." + d) for d in domains):
+        return True
+    return any(host.endswith(z) for z in zones)
 
 
 class RuleEngine:
     """Multi-lingual heuristic detection engine."""
 
     def __init__(self):
-        self.official_domains = load_official_domains()
+        self.official_domains, self.official_zones = load_official_domain_lists()
 
     def analyze(self, text: str) -> RuleAnalysisResult:
         """
@@ -261,7 +285,7 @@ class RuleEngine:
                 continue
             # Look for bank/utility names inside domain
             if re.search(r"(?:sbi|yono|hdfc|icici|kotak|pnb|electricity|bijli|trai|epfo)", dom):
-                if dom not in self.official_domains and not any(dom.endswith("." + off) for off in self.official_domains):
+                if not is_official_host(dom, self.official_domains, self.official_zones):
                     link_hits.append(f"Potential deceptive lookalike domain: '{dom}'")
                     if max_link_sev != "CRITICAL":
                         max_link_sev = "HIGH"

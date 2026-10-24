@@ -22,7 +22,22 @@ REQUIRED_COLUMNS = [
 
 VALID_LABELS = {"SCAM", "SAFE", "SUSPICIOUS"}
 VALID_SPLITS = {"train", "val", "test"}
-VALID_LANGUAGES = {"en", "hi", "hinglish"}
+VALID_LANGUAGES = {"en", "hinglish"}
+VALID_ORIGINS = {"public", "synthetic"}
+
+# Message files in the dataset folder, and the columns they must contain.
+MESSAGE_FILES = ("messages_english.csv", "messages_hinglish.csv")
+FILE_COLUMNS = [
+    "message_id", "message", "label", "category", "risk_signals",
+    "language", "origin", "source_id", "split",
+]
+# File column -> name used by the rest of the app
+COLUMN_RENAMES = {
+    "message_id": "curated_id",
+    "label": "assigned_label",
+    "category": "curated_category",
+    "risk_signals": "curated_risk_signals",
+}
 
 
 class DatasetValidationReport(BaseModel):
@@ -98,8 +113,8 @@ class DatasetLoader:
 
     def load(self) -> Tuple[Optional[CuratedDataset], DatasetValidationReport]:
         """
-        Loads dataset.csv and sources.csv from the configured directory.
-        Performs thorough validation on schema, labels, splits, and nulls.
+        Loads the English and Hinglish message files and sources.csv from the dataset folder.
+        Validates columns, labels, splits, languages, duplicates and empty messages.
         Returns (CuratedDataset, DatasetValidationReport).
         """
         if not self.dataset_dir or not Path(self.dataset_dir).exists():
@@ -111,86 +126,74 @@ class DatasetLoader:
             )
             return None, report
 
-        csv_path = Path(self.dataset_dir) / "dataset.csv"
-        sources_path = Path(self.dataset_dir) / "sources.csv"
-        exclusions_path = Path(self.dataset_dir) / "exclusions.csv"
-        review_path = Path(self.dataset_dir) / "review_required.csv"
-
-        if not csv_path.exists():
-            report = DatasetValidationReport(
-                is_valid=False,
-                validation_errors=[f"Required dataset file missing: {csv_path}"],
-            )
-            return None, report
-
-        try:
-            df = pd.read_csv(csv_path, encoding="utf-8")
-        except Exception as e:
-            report = DatasetValidationReport(
-                is_valid=False,
-                validation_errors=[f"Failed to read CSV at {csv_path}: {str(e)}"],
-            )
-            return None, report
-
-        sources_df = None
-        if sources_path.exists():
-            try:
-                sources_df = pd.read_csv(sources_path, encoding="utf-8")
-            except Exception:
-                pass
-
-        # Validate Schema
+        folder = Path(self.dataset_dir)
         errors: List[str] = []
         warnings: List[str] = []
 
-        missing_cols = [col for col in REQUIRED_COLUMNS if col not in df.columns]
-        if missing_cols:
-            errors.append(f"Missing required columns in dataset.csv: {missing_cols}")
+        frames = []
+        for name in MESSAGE_FILES:
+            path = folder / name
+            if not path.exists():
+                errors.append(f"Required dataset file missing: {path}")
+                continue
+            try:
+                part = pd.read_csv(path, encoding="utf-8-sig", dtype=str, keep_default_na=False)
+            except Exception as e:
+                errors.append(f"Failed to read CSV at {path}: {str(e)}")
+                continue
+            missing = [c for c in FILE_COLUMNS if c not in part.columns]
+            if missing:
+                errors.append(f"Missing required columns in {name}: {missing}")
+                continue
+            frames.append(part)
 
-        if errors:
+        if errors or not frames:
             return None, DatasetValidationReport(is_valid=False, validation_errors=errors)
 
-        # Check for empty messages
-        empty_msg_mask = df["message"].isna() | (df["message"].astype(str).str.strip() == "")
+        df = pd.concat(frames, ignore_index=True)
+        df = df.rename(columns=COLUMN_RENAMES)
+        df["is_synthetic"] = df["origin"].str.lower().eq("synthetic")
+
+        sources_df = None
+        sources_path = folder / "sources.csv"
+        if sources_path.exists():
+            try:
+                sources_df = pd.read_csv(sources_path, encoding="utf-8-sig", dtype=str, keep_default_na=False)
+                if "license" in sources_df.columns and "stated_license" not in sources_df.columns:
+                    sources_df = sources_df.rename(columns={"license": "stated_license"})
+            except Exception:
+                sources_df = None
+
+        # Validate
+        missing_cols = [col for col in REQUIRED_COLUMNS if col not in df.columns]
+        if missing_cols:
+            errors.append(f"Missing required columns after loading: {missing_cols}")
+
+        empty_msg_mask = df["message"].str.strip() == ""
         if empty_msg_mask.any():
-            count_empty = empty_msg_mask.sum()
-            errors.append(f"Found {count_empty} records with missing or empty messages.")
+            errors.append(f"Found {int(empty_msg_mask.sum())} records with missing or empty messages.")
 
-        # Validate Labels
-        invalid_labels = set(df["assigned_label"].dropna().unique()) - VALID_LABELS
+        invalid_labels = set(df["assigned_label"].unique()) - VALID_LABELS
         if invalid_labels:
-            errors.append(f"Found unexpected labels in assigned_label: {invalid_labels}")
+            errors.append(f"Found unexpected labels in label: {invalid_labels}")
 
-        # Validate Splits
-        invalid_splits = set(df["split"].dropna().unique()) - VALID_SPLITS
+        invalid_splits = set(df["split"].unique()) - VALID_SPLITS
         if invalid_splits:
             errors.append(f"Found unexpected splits in split: {invalid_splits}")
 
-        # Check for exclusions or review_required records in approved dataset
-        excluded_ids = set()
-        if exclusions_path.exists():
-            try:
-                ex_df = pd.read_csv(exclusions_path, encoding="utf-8")
-                id_col = "curated_id" if "curated_id" in ex_df.columns else ex_df.columns[0]
-                excluded_ids.update(ex_df[id_col].dropna().astype(str))
-            except Exception:
-                pass
+        invalid_langs = set(df["language"].unique()) - VALID_LANGUAGES
+        if invalid_langs:
+            errors.append(f"Found unexpected languages in language: {invalid_langs}")
 
-        if review_path.exists():
-            try:
-                rev_df = pd.read_csv(review_path, encoding="utf-8")
-                id_col = "curated_id" if "curated_id" in rev_df.columns else rev_df.columns[0]
-                excluded_ids.update(rev_df[id_col].dropna().astype(str))
-            except Exception:
-                pass
+        invalid_origins = set(df["origin"].str.lower().unique()) - VALID_ORIGINS
+        if invalid_origins:
+            errors.append(f"Found unexpected values in origin: {invalid_origins}")
 
-        if excluded_ids:
-            curated_ids_in_dataset = set(df["curated_id"].dropna().astype(str))
-            leaked_exclusions = curated_ids_in_dataset & excluded_ids
-            if leaked_exclusions:
-                errors.append(
-                    f"Found {len(leaked_exclusions)} records from exclusions or review_required present in candidate dataset!"
-                )
+        if df["curated_id"].duplicated().any():
+            errors.append(f"Found {int(df['curated_id'].duplicated().sum())} duplicate message_id values.")
+
+        if df["message"].duplicated().any():
+            errors.append(f"Found {int(df['message'].duplicated().sum())} duplicate message texts.")
 
         if errors:
             return None, DatasetValidationReport(
@@ -214,8 +217,8 @@ class DatasetLoader:
         # Summary statistics
         total_records = len(df)
         label_dist = df["assigned_label"].value_counts().to_dict()
-        lang_dist = df["language"].value_counts().to_dict() if "language" in df.columns else {}
-        synthetic_count = int(df["is_synthetic"].sum()) if "is_synthetic" in df.columns else 0
+        lang_dist = df["language"].value_counts().to_dict()
+        synthetic_count = int(df["is_synthetic"].sum())
         public_count = total_records - synthetic_count
         synth_ratio = round(synthetic_count / total_records, 4) if total_records > 0 else 0.0
 
@@ -225,7 +228,7 @@ class DatasetLoader:
             )
 
         report = DatasetValidationReport(
-            is_valid=True,
+            is_valid=not errors,
             total_records=total_records,
             train_records=len(df_train),
             val_records=len(df_val),
@@ -245,7 +248,7 @@ class DatasetLoader:
             df_test=df_test,
             sources_df=sources_df,
             report=report,
-            dataset_path=Path(self.dataset_dir),
+            dataset_path=folder,
         )
 
         return curated_dataset, report
