@@ -116,17 +116,24 @@ STRINGS = {
         "what_to_do_now": "What to do now",
         "backend_english_note": "नीचे दिया गया विवरण अंग्रेज़ी में है।",
 
-        # Status lines
-        "status_ai_rules_refs": "Checked with AI, warning-sign rules and similar known examples.",
-        "status_ai_rules": "Checked with AI and warning-sign rules.",
-        "status_rules_refs": "The AI check was not used this time. This result comes from built-in rules and similar known examples.",
-        "status_rules_only": "The AI check was not used this time. This result comes from built-in rules only.",
+        # How we checked this strip
+        "how_checked_heading": "How we checked this",
+        "badge_ai_title": "AI analysis",
+        "badge_ai_sub": "Gemini AI read the message",
+        "badge_ai_off_title": "AI check not used this time",
+        "badge_ai_off_sub": "Offline backup check",
+        "badge_rules_title": "Warning-sign rules",
+        "badge_rules_sub": "Checked for known scam patterns",
+        "badge_dataset_title": "Known scam examples",
+        "badge_dataset_sub": "Compared with similar messages in our reference collection",
+        "check_summary_full": "AI analyzed the message and cross-checked against warning-sign rules and our reference collection of known scam examples.",
+        "check_summary_ai_rules": "AI analyzed the message and cross-checked against warning-sign rules.",
+        "check_summary_rules_refs": "The offline backup check cross-checked the message against warning-sign rules and our reference collection of known scam examples.",
+        "check_summary_rules_only": "The offline backup check analyzed the message against warning-sign rules only.",
+        "rule_patterns_label": "Patterns found:",
+        "no_patterns_found": "No known warning-sign pattern matched. That does not prove the message is genuine.",
 
         # Expanders
-        "how_checked_expander": "How this was checked",
-        "patterns_found": "Patterns the rules found in the message:",
-        "no_patterns_found": "The rules did not match any known warning-sign pattern. That does not prove the message is genuine.",
-
         "refs_expander": "Similar example messages we compared",
         "refs_note": "These are examples from our reference collection, not proof about your message. Many are written for testing.",
         "ref_synthetic": "Written for testing",
@@ -203,17 +210,24 @@ STRINGS = {
         "what_to_do_now": "अब क्या करें",
         "backend_english_note": "नीचे दिया गया विवरण अंग्रेज़ी में है।",
 
-        # Status lines
-        "status_ai_rules_refs": "AI, ख़तरे के नियमों और जाने-पहचाने उदाहरणों की मदद से जाँचा गया।",
-        "status_ai_rules": "AI और ख़तरे के नियमों की मदद से जाँचा गया।",
-        "status_rules_refs": "इस बार AI जाँच का उपयोग नहीं हुआ। यह परिणाम इन-बिल्ट नियमों और जाने-पहचाने उदाहरणों पर आधारित है।",
-        "status_rules_only": "इस बार AI जाँच का उपयोग नहीं हुआ। यह परिणाम केवल इन-बिल्ट नियमों पर आधारित है।",
-
-        # Expanders
-        "how_checked_expander": "इसकी जाँच कैसे हुई",
-        "patterns_found": "संदेश में नियमों द्वारा पाए गए संदिग्ध संकेत:",
+        # How we checked this strip
+        "how_checked_heading": "हमने यह कैसे जांचा",
+        "badge_ai_title": "AI जांच",
+        "badge_ai_sub": "Gemini AI ने संदेश पढ़ा",
+        "badge_ai_off_title": "इस बार AI जांच का उपयोग नहीं हुआ",
+        "badge_ai_off_sub": "ऑफ़लाइन बैकअप जांच",
+        "badge_rules_title": "खतरे के संकेतों की जांच",
+        "badge_rules_sub": "पहचाने गए स्कैम पैटर्न की पड़ताल",
+        "badge_dataset_title": "जाने-पहचाने स्कैम के उदाहरण",
+        "badge_dataset_sub": "संदर्भ संग्रह के मिलते-जुलते संदेशों से तुलना",
+        "check_summary_full": "AI ने संदेश का विश्लेषण किया और खतरे के नियमों व संदर्भ संग्रह के जाने-पहचाने स्कैम उदाहरणों से क्रॉस-चेक किया।",
+        "check_summary_ai_rules": "AI ने संदेश का विश्लेषण किया और खतरे के नियमों से क्रॉस-चेक किया।",
+        "check_summary_rules_refs": "ऑफ़लाइन बैकअप जांच द्वारा संदेश को खतरे के नियमों और जाने-पहचाने स्कैम उदाहरणों के संदर्भ संग्रह से क्रॉस-चेक किया गया।",
+        "check_summary_rules_only": "ऑफ़लाइन बैकअप जांच द्वारा केवल खतरे के नियमों के आधार पर संदेश का विश्लेषण किया गया।",
+        "rule_patterns_label": "मिले संकेत:",
         "no_patterns_found": "नियमों को कोई जाना-पहचाना ख़तरे का संकेत नहीं मिला। इसका मतलब यह नहीं कि संदेश पूरी तरह असली है।",
 
+        # Expanders
         "refs_expander": "मिलते-जुलते उदाहरण जिनकी हमने तुलना की",
         "refs_note": "ये हमारे संदर्भ संग्रह के उदाहरण हैं, आपके संदेश का कोई पक्का सबूत नहीं। इनमें से कई सिर्फ़ टेस्टिंग के लिए लिखे गए हैं।",
         "ref_synthetic": "टेस्टिंग के लिए लिखा गया",
@@ -235,9 +249,9 @@ STRINGS = {
 }
 
 ICONS = {
-    "SCAM": '<svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="8.5,2.5 15.5,2.5 21.5,8.5 21.5,15.5 15.5,21.5 8.5,21.5 2.5,15.5 2.5,8.5"/><path d="M9 9l6 6M15 9l-6 6"/></svg>',
-    "SUSPICIOUS": '<svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3L22 20H2L12 3z"/><path d="M12 10v4.5M12 17.2v.1"/></svg>',
-    "SAFE": '<svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><path d="M7.5 12.5l3 3 6-6.5"/></svg>',
+    "SCAM": '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="8.5,2.5 15.5,2.5 21.5,8.5 21.5,15.5 15.5,21.5 8.5,21.5 2.5,15.5 2.5,8.5"/><path d="M9 9l6 6M15 9l-6 6"/></svg>',
+    "SUSPICIOUS": '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3L22 20H2L12 3z"/><path d="M12 10v4.5M12 17.2v.1"/></svg>',
+    "SAFE": '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><path d="M7.5 12.5l3 3 6-6.5"/></svg>',
 }
 
 SHIELD_LOGO = (
@@ -271,6 +285,7 @@ def get_css(theme: str, lang: str) -> str:
   --note-info-bg:#1E294D; --note-info-border:#3B4E82;
   --note-err-bg:#261E26; --note-err-border:#523C4D;
   --textarea-border:#475569; --btn-sec-border:#475569;
+  --badge-active-dot:#34D399;
         """
     else:
         colors = """
@@ -283,12 +298,13 @@ def get_css(theme: str, lang: str) -> str:
   --note-info-bg:var(--brand-soft); --note-info-border:#B9C3E6;
   --note-err-bg:#EEF0F4; --note-err-border:#9AA6BF;
   --textarea-border:#7C889C; --btn-sec-border:#9AA6BF;
+  --badge-active-dot:#16A34A;
         """
 
     # Add ~0.1 to line-height for Hindi (Devanagari)
     lh_body = "1.65" if is_hi else "1.55"
     lh_heading = "1.22" if is_hi else "1.12"
-    lh_card = "1.7" if is_hi else "1.6"
+    lh_card = "1.65" if is_hi else "1.55"
 
     return f"""
 <style>
@@ -313,7 +329,7 @@ html, body, [class*="css"], .stApp, button, textarea, input {{
 [data-testid="stHeader"], #MainMenu, footer, [data-testid="stToolbar"] {{ display:none !important; }}
 .block-container {{
   max-width:1240px !important;
-  padding:1.25rem 1.5rem 3.5rem !important;
+  padding:1.1rem 1.4rem 3.5rem !important;
   background:transparent !important;
 }}
 
@@ -324,16 +340,16 @@ html, body, [class*="css"], .stApp, button, textarea, input {{
 
 /* Top bar container */
 .st-key-topbar_container {{
-  padding-bottom:.85rem;
+  padding-bottom:.75rem;
   border-bottom:1px solid var(--line);
-  margin-bottom:.5rem;
+  margin-bottom:.4rem;
 }}
 .brand {{
   display:flex;
   align-items:center;
   gap:.55rem;
   font-weight:800;
-  font-size:1.3rem;
+  font-size:1.25rem;
   color:var(--brand);
   letter-spacing:-.01em;
 }}
@@ -345,12 +361,12 @@ html, body, [class*="css"], .stApp, button, textarea, input {{
 .sos {{
   display:inline-block;
   font-weight:700;
-  font-size:.95rem;
+  font-size:.92rem;
   color:var(--scam);
   text-decoration:none;
   border:2px solid var(--scam);
   border-radius:999px;
-  padding:.35rem .9rem;
+  padding:.32rem .85rem;
   white-space:nowrap;
   background:var(--surface);
   text-align:center;
@@ -362,7 +378,7 @@ html, body, [class*="css"], .stApp, button, textarea, input {{
   margin:0 !important;
 }}
 .st-key-topbar_container [data-testid="stToggle"] label p {{
-  font-size:.95rem !important;
+  font-size:.92rem !important;
   font-weight:700 !important;
   color:var(--ink) !important;
   margin:0 !important;
@@ -371,16 +387,16 @@ html, body, [class*="css"], .stApp, button, textarea, input {{
   margin:0 !important;
 }}
 .st-key-topbar_container [data-testid="stRadio"] > div {{
-  gap:.35rem !important;
+  gap:.3rem !important;
   flex-direction:row !important;
 }}
 .st-key-topbar_container [data-testid="stRadio"] div[role="radiogroup"] label {{
-  font-size:.95rem !important;
+  font-size:.92rem !important;
   font-weight:700 !important;
   color:var(--ink) !important;
   cursor:pointer;
   margin:0 !important;
-  padding:.2rem .45rem !important;
+  padding:.15rem .4rem !important;
   border-radius:6px;
 }}
 .st-key-topbar_container [data-testid="stRadio"] div[role="radiogroup"] label:has(input:checked) {{
@@ -399,39 +415,39 @@ summary:focus-visible, [tabindex]:focus-visible,
 }}
 
 /* Intro */
-.intro {{ padding:1.4rem 0 1.25rem; }}
+.intro {{ padding:1rem 0 .9rem; }}
 .intro h1 {{
-  font-size:clamp(1.85rem,5.2vw,3rem);
+  font-size:clamp(1.6rem,4.5vw,2.4rem);
   line-height:var(--lh-heading);
   font-weight:800;
   letter-spacing:-.025em;
-  margin:0 0 .8rem;
+  margin:0 0 .5rem;
   color:var(--ink);
-  max-width:24ch;
+  max-width:26ch;
 }}
 .intro p {{
-  font-size:1.15rem;
+  font-size:1.05rem;
   line-height:var(--lh-body);
   color:var(--muted);
-  margin:0 0 .35rem;
-  max-width:54ch;
+  margin:0 0 .25rem;
+  max-width:58ch;
 }}
-.intro .hi {{ font-size:1.05rem; }}
+.intro .hi {{ font-size:1rem; }}
 
 /* Input */
 [data-testid="stTextArea"] label p {{
-  font-size:1.1rem !important;
+  font-size:1.05rem !important;
   font-weight:700 !important;
   color:var(--ink) !important;
 }}
 [data-testid="stTextArea"] textarea {{
-  font-size:1.125rem !important;
+  font-size:1.05rem !important;
   line-height:var(--lh-body) !important;
   color:var(--ink) !important;
   background:var(--surface) !important;
   border:2px solid var(--textarea-border) !important;
   border-radius:12px !important;
-  padding:1rem !important;
+  padding:.85rem !important;
 }}
 [data-testid="stTextArea"] textarea:focus {{
   border-color:var(--brand) !important;
@@ -441,16 +457,16 @@ summary:focus-visible, [tabindex]:focus-visible,
   color:var(--muted) !important;
 }}
 .privacy {{
-  font-size:.95rem;
+  font-size:.9rem;
   color:var(--muted);
   line-height:var(--lh-body);
-  margin:.35rem 0 1rem;
+  margin:.25rem 0 .85rem;
 }}
 
 /* Buttons */
 .stButton > button, [data-testid="stBaseButton-primary"], [data-testid="stBaseButton-secondary"] {{
-  min-height:3.25rem;
-  font-size:1.125rem !important;
+  min-height:3rem;
+  font-size:1.05rem !important;
   font-weight:700 !important;
   border-radius:12px !important;
   width:100%;
@@ -481,7 +497,7 @@ summary:focus-visible, [tabindex]:focus-visible,
 
 /* Underlined Clear Button */
 .st-key-clear button {{
-  min-height:2.75rem !important;
+  min-height:2.6rem !important;
   background:transparent !important;
   border:2px solid transparent !important;
   text-decoration:underline !important;
@@ -491,7 +507,7 @@ summary:focus-visible, [tabindex]:focus-visible,
   color:var(--ink) !important;
 }}
 .st-key-clear button p {{
-  font-size:1.05rem !important;
+  font-size:1rem !important;
   color:inherit !important;
 }}
 
@@ -502,12 +518,12 @@ summary:focus-visible, [tabindex]:focus-visible,
   border-radius:12px;
 }}
 [data-testid="stExpander"] summary {{
-  font-size:1.05rem;
+  font-size:1rem;
   font-weight:700;
   color:var(--ink) !important;
 }}
 [data-testid="stExpander"] summary p {{
-  font-size:1.05rem !important;
+  font-size:1rem !important;
   font-weight:700 !important;
   color:var(--ink) !important;
 }}
@@ -529,10 +545,10 @@ summary:focus-visible, [tabindex]:focus-visible,
 /* Notices */
 .note {{
   border-radius:12px;
-  padding:.9rem 1.1rem;
-  font-size:1.05rem;
+  padding:.8rem 1rem;
+  font-size:1rem;
   line-height:var(--lh-body);
-  margin:1rem 0;
+  margin:.9rem 0;
   border:1px solid;
 }}
 .note b {{ display:block; margin-bottom:.15rem; }}
@@ -547,11 +563,13 @@ summary:focus-visible, [tabindex]:focus-visible,
   color:var(--ink);
 }}
 
-/* Verdict */
+/* ==========================================================================
+   COMPACT VERDICT CARD & RESULT LAYOUT
+   ========================================================================== */
 .verdict {{
-  border-radius:16px;
-  padding:1.5rem 1.4rem 1.4rem;
-  margin:1.5rem 0 1rem;
+  border-radius:14px;
+  padding:1rem 1.15rem;
+  margin:1.1rem 0 .75rem;
   border:1px solid var(--edge);
   background:var(--tint);
   color:var(--ink);
@@ -559,21 +577,39 @@ summary:focus-visible, [tabindex]:focus-visible,
 .v-scam {{ --tone:var(--scam); --tint:var(--scam-tint); --edge:var(--scam-edge); }}
 .v-warn {{ --tone:var(--warn); --tint:var(--warn-tint); --edge:var(--warn-edge); }}
 .v-safe {{ --tone:var(--safe); --tint:var(--safe-tint); --edge:var(--safe-edge); }}
+
+/* Verdict Header Row */
+.v-header {{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:.75rem;
+  flex-wrap:wrap;
+  margin-bottom:.45rem;
+}}
+.v-stamp-group {{
+  display:flex;
+  align-items:center;
+  gap:.75rem;
+  flex-wrap:wrap;
+  flex:1 1 auto;
+}}
 .stamp {{
   display:inline-flex;
   align-items:center;
-  gap:.65rem;
+  gap:.45rem;
   color:var(--tone);
   background:var(--stamp-bg);
-  border:5px double var(--tone);
-  border-radius:10px;
-  padding:.5rem 1.1rem .5rem .8rem;
+  border:3.5px double var(--tone);
+  border-radius:8px;
+  padding:.26rem .75rem .26rem .55rem;
   font-weight:800;
-  font-size:clamp(1.45rem,5.2vw,2.1rem);
-  line-height:var(--lh-heading);
+  font-size:1.22rem;
+  line-height:1.1;
   letter-spacing:-.01em;
   transform:rotate(-1.5deg);
   animation:thud .38s cubic-bezier(.2,1.5,.4,1) both;
+  white-space:nowrap;
 }}
 @keyframes thud {{
   from {{ transform:rotate(-1.5deg) scale(1.28); opacity:0; }}
@@ -581,68 +617,92 @@ summary:focus-visible, [tabindex]:focus-visible,
 }}
 @media (prefers-reduced-motion:reduce) {{ .stamp {{ animation:none; }} }}
 
-.v-lead {{
-  font-size:1.2rem;
-  font-weight:700;
-  margin:1.1rem 0 .2rem;
-  color:var(--tone);
-  line-height:var(--lh-body);
+.v-headline {{
+  display:flex;
+  flex-direction:column;
+  gap:.1rem;
 }}
 .v-type {{
-  font-size:1.05rem;
-  color:var(--muted);
-  margin:0 0 .9rem;
-  line-height:var(--lh-body);
+  font-size:1.08rem;
+  font-weight:800;
+  color:var(--ink);
+  line-height:1.25;
 }}
+.v-lead {{
+  font-size:.96rem;
+  font-weight:700;
+  color:var(--tone);
+  line-height:1.35;
+}}
+
+.v-conf-pill {{
+  display:inline-flex;
+  align-items:center;
+  gap:.3rem;
+  font-size:.84rem;
+  font-weight:600;
+  padding:.22rem .65rem;
+  border-radius:999px;
+  background:var(--surface);
+  border:1px solid var(--line);
+  color:var(--muted);
+  white-space:nowrap;
+}}
+.v-conf-pill b {{
+  color:var(--ink);
+  font-weight:700;
+}}
+
 .v-explain {{
-  font-size:1.2rem;
+  font-size:1rem;
   line-height:var(--lh-card);
-  margin:0;
-  max-width:62ch;
+  margin:.45rem 0 .75rem;
+  max-width:70ch;
   color:var(--ink);
 }}
-.v-meta {{
-  margin-top:1rem;
-  padding-top:.8rem;
-  border-top:1px solid var(--edge);
-  font-size:1rem;
-  color:var(--muted);
-}}
 
-.backend-lang-note {{
-  font-size:.95rem;
-  color:var(--muted);
-  margin:1.1rem 0 .2rem;
-  font-style:italic;
-  line-height:var(--lh-body);
+/* Two columns side-by-side on desktop */
+.v-grid {{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:1rem;
+  margin-top:.5rem;
 }}
-
-.sec {{ margin:1.6rem 0 0; }}
-.sec h2 {{
-  font-size:1.3rem;
+.v-grid.single-col {{
+  grid-template-columns:1fr;
+}}
+.v-col {{
+  min-width:0;
+}}
+.v-sec-title {{
+  font-size:1.08rem;
   font-weight:800;
-  margin:0 0 .7rem;
+  margin:0 0 .35rem;
   color:var(--ink);
   letter-spacing:-.01em;
   line-height:var(--lh-heading);
 }}
+
 .flags, .steps {{ margin:0; padding:0; list-style:none; }}
 .flags li {{
   position:relative;
-  padding:.65rem 0 .65rem 1.9rem;
+  padding:.35rem 0 .35rem 1.35rem;
   border-bottom:1px solid var(--line);
-  font-size:1.1rem;
+  font-size:.98rem;
   line-height:var(--lh-body);
   overflow-wrap:anywhere;
   color:var(--ink);
 }}
+.flags li:last-child {{
+  border-bottom:none;
+}}
 .flags li::before {{
   content:"";
   position:absolute;
-  left:.2rem;
-  top:1.05rem;
-  width:.8rem;
-  height:.8rem;
+  left:.1rem;
+  top:.68rem;
+  width:.55rem;
+  height:.55rem;
   background:var(--mark,var(--scam));
   clip-path:polygon(0 0,100% 0,100% 100%,50% 75%,0 100%);
 }}
@@ -653,81 +713,199 @@ summary:focus-visible, [tabindex]:focus-visible,
 .steps li {{
   counter-increment:s;
   display:flex;
-  gap:.85rem;
+  gap:.6rem;
   align-items:flex-start;
-  background:var(--surface);
-  border:1px solid var(--line);
-  border-radius:12px;
-  padding:.85rem 1rem;
-  margin-bottom:.6rem;
-  font-size:1.1rem;
+  padding:.35rem 0;
+  border-bottom:1px solid var(--line);
+  font-size:.98rem;
   line-height:var(--lh-body);
   overflow-wrap:anywhere;
   color:var(--ink);
+  background:transparent;
+  border-radius:0;
+  margin-bottom:0;
+}}
+.steps li:last-child {{
+  border-bottom:none;
 }}
 .steps li::before {{
   content:counter(s);
   flex:none;
-  width:1.8rem;
-  height:1.8rem;
+  width:1.4rem;
+  height:1.4rem;
   border-radius:50%;
   background:var(--brand);
   color:#fff;
   font-weight:800;
   display:grid;
   place-items:center;
-  font-size:1rem;
+  font-size:.8rem;
+  margin-top:.1rem;
 }}
 
-.detail {{ font-size:1.02rem; line-height:var(--lh-body); color:var(--ink); }}
+/* "How we checked this" strip */
+.check-strip {{
+  margin-top:.85rem;
+  padding-top:.75rem;
+  border-top:1px solid var(--edge);
+}}
+.check-strip-header {{
+  display:flex;
+  align-items:baseline;
+  justify-content:space-between;
+  gap:.75rem;
+  flex-wrap:wrap;
+  margin-bottom:.5rem;
+}}
+.check-strip h4 {{
+  font-size:1.05rem;
+  font-weight:800;
+  margin:0;
+  color:var(--ink);
+  letter-spacing:-.01em;
+  line-height:var(--lh-heading);
+}}
+.badge-row {{
+  display:flex;
+  gap:.5rem;
+  flex-wrap:wrap;
+  align-items:stretch;
+}}
+.check-badge {{
+  display:inline-flex;
+  align-items:center;
+  gap:.45rem;
+  background:var(--surface);
+  border:1px solid var(--line);
+  border-radius:8px;
+  padding:.35rem .6rem;
+  flex:1 1 auto;
+  min-width:140px;
+}}
+.badge-dot {{
+  width:8px;
+  height:8px;
+  border-radius:50%;
+  background:var(--badge-active-dot);
+  flex-shrink:0;
+}}
+.badge-dot.dot-neutral {{
+  background:var(--muted);
+}}
+.badge-text {{
+  display:flex;
+  flex-direction:column;
+}}
+.badge-text strong {{
+  font-size:.86rem;
+  color:var(--ink);
+  line-height:1.2;
+}}
+.badge-text small {{
+  font-size:.76rem;
+  color:var(--muted);
+  line-height:1.25;
+}}
+.check-summary {{
+  font-size:.9rem;
+  color:var(--muted);
+  margin:.5rem 0 .4rem;
+  line-height:var(--lh-body);
+}}
+.rule-chips {{
+  display:flex;
+  align-items:flex-start;
+  gap:.35rem;
+  flex-wrap:wrap;
+  margin-top:.3rem;
+}}
+.chips-label {{
+  font-size:.85rem;
+  font-weight:700;
+  color:var(--ink);
+  margin-top:.15rem;
+}}
+.rule-chip {{
+  display:inline-block;
+  font-size:.82rem;
+  padding:.18rem .48rem;
+  background:var(--surface);
+  border:1px solid var(--line);
+  border-radius:6px;
+  color:var(--ink);
+  line-height:1.35;
+}}
+.rule-chip strong {{
+  color:var(--ink);
+}}
+.no-patterns {{
+  font-size:.86rem;
+  color:var(--muted);
+  margin:.25rem 0;
+  font-style:italic;
+}}
+.compact-note {{
+  font-size:.84rem;
+  color:var(--muted);
+  line-height:1.35;
+  margin:.25rem 0;
+}}
+.compact-note.note-en-hint {{
+  font-style:italic;
+}}
+.compact-note b {{
+  color:var(--ink);
+}}
+
+.detail {{ font-size:1rem; line-height:var(--lh-body); color:var(--ink); }}
 .detail p {{ margin:.2rem 0 .7rem; color:var(--ink); }}
-.ref {{ border-left:4px solid var(--line); padding:.2rem 0 .2rem .9rem; margin:.9rem 0; }}
+.ref {{ border-left:4px solid var(--line); padding:.2rem 0 .2rem .9rem; margin:.85rem 0; }}
 .ref q {{
   display:block;
-  font-size:.98rem;
+  font-size:.96rem;
   color:var(--muted);
   margin:.25rem 0;
   overflow-wrap:anywhere;
   quotes:"\\201C" "\\201D";
 }}
-.ref small {{ color:var(--muted); font-size:.88rem; }}
+.ref small {{ color:var(--muted); font-size:.85rem; }}
 
 /* Right rail */
 .rail {{
   background:var(--surface);
   border:1px solid var(--line);
   border-radius:16px;
-  padding:1.4rem 1.3rem;
-  margin-top:1.6rem;
+  padding:1.25rem 1.15rem;
+  margin-top:1rem;
   color:var(--ink);
 }}
 .rail h2 {{
-  font-size:1.2rem;
+  font-size:1.15rem;
   font-weight:800;
-  margin:0 0 .4rem;
+  margin:0 0 .35rem;
   letter-spacing:-.01em;
   color:var(--ink);
   line-height:var(--lh-heading);
 }}
 .rail h3 {{
-  font-size:1.05rem;
+  font-size:1rem;
   font-weight:800;
-  margin:1.3rem 0 .3rem;
-  padding-top:1.1rem;
+  margin:1.1rem 0 .25rem;
+  padding-top:1rem;
   border-top:1px solid var(--line);
   color:var(--ink);
   line-height:var(--lh-heading);
 }}
 .rail p {{
-  font-size:1rem;
+  font-size:.95rem;
   line-height:var(--lh-body);
   color:var(--muted);
-  margin:.2rem 0 .5rem;
+  margin:.2rem 0 .45rem;
 }}
-.rail ul {{ list-style:none; padding:0; margin:.3rem 0 0; }}
+.rail ul {{ list-style:none; padding:0; margin:.25rem 0 0; }}
 .rail li {{
-  padding:.45rem 0;
-  font-size:1rem;
+  padding:.4rem 0;
+  font-size:.95rem;
   line-height:var(--lh-body);
   overflow-wrap:anywhere;
   color:var(--ink);
@@ -741,12 +919,12 @@ summary:focus-visible, [tabindex]:focus-visible,
   text-align:center;
   background:#DC2626;
   color:#fff !important;
-  font-size:1.35rem;
+  font-size:1.25rem;
   font-weight:800;
   border-radius:12px;
-  padding:.75rem;
+  padding:.7rem;
   text-decoration:none;
-  margin:.7rem 0 .8rem;
+  margin:.6rem 0 .7rem;
 }}
 .rail a.call:hover {{
   filter:brightness(1.1);
@@ -759,10 +937,10 @@ summary:focus-visible, [tabindex]:focus-visible,
   .sos, .sos-wrap {{ display:none !important; }}
   .st-key-topbar_container [data-testid="column"]:has(.sos-wrap) {{ display:none !important; }}
 
-  /* Top bar layout on phone: logo on row 1, toggles in a row on row 2 */
+  /* Top bar layout on phone */
   .st-key-topbar_container > [data-testid="stHorizontalBlock"] {{
     flex-direction:column !important;
-    gap:.6rem !important;
+    gap:.5rem !important;
   }}
   .st-key-topbar_container > [data-testid="stHorizontalBlock"] > [data-testid="column"] {{
     width:100% !important;
@@ -779,6 +957,27 @@ summary:focus-visible, [tabindex]:focus-visible,
   .st-key-topbar_container [data-testid="column"] > [data-testid="stHorizontalBlock"] > [data-testid="column"] {{
     width:auto !important;
     flex:0 0 auto !important;
+  }}
+
+  /* Mobile compact result */
+  .v-header {{
+    flex-direction:column;
+    align-items:flex-start;
+    gap:.4rem;
+  }}
+  .v-conf-pill {{
+    margin-top:.2rem;
+  }}
+  .v-grid {{
+    grid-template-columns:1fr !important;
+    gap:.8rem;
+  }}
+  .badge-row {{
+    flex-direction:column;
+  }}
+  .check-badge {{
+    width:100%;
+    min-width:0;
   }}
 
   .block-container {{
@@ -912,15 +1111,15 @@ def clean_list(items) -> list:
     return [str(i).strip() for i in (items or []) if str(i).strip()]
 
 
-def status_line(out: PipelineOutput) -> str:
-    """Plain-language description of how this result was produced, from real backend flags."""
+def get_check_summary(out: PipelineOutput) -> str:
+    """Truthful plain-language summary of how the message was checked."""
     if out.is_ai and out.is_dataset_informed:
-        return t("status_ai_rules_refs")
+        return t("check_summary_full")
     if out.is_ai:
-        return t("status_ai_rules")
+        return t("check_summary_ai_rules")
     if out.is_dataset_informed:
-        return t("status_rules_refs")
-    return t("status_rules_only")
+        return t("check_summary_rules_refs")
+    return t("check_summary_rules_only")
 
 
 def render_result(out: PipelineOutput):
@@ -955,71 +1154,119 @@ def render_result(out: PipelineOutput):
         "LOW": t("confidence_low"),
     }
     conf = conf_map.get(str(out.confidence).upper().strip())
-    meta = f"{esc(t('confidence_label'))}: <b>{esc(conf)}</b>" if conf else ""
-
-    st.markdown(
-        f'<section class="verdict {verdict_info["cls"]}" role="status" aria-live="polite">'
-        f'<div class="stamp">{ICONS[key]}<span>{esc(verdict_info["title"])}</span></div>'
-        f'<p class="v-lead">{esc(verdict_info["lead"])}</p>'
-        f'<p class="v-type">{esc(str(out.scam_type))}</p>'
-        f'<p class="v-explain">{esc(str(out.explanation))}</p>'
-        + (f'<div class="v-meta">{meta}</div>' if meta else "")
-        + "</section>",
-        unsafe_allow_html=True,
+    pill_html = (
+        f'<div class="v-conf-pill">{esc(t("confidence_label"))}: <b>{esc(conf)}</b></div>'
+        if conf else ""
     )
 
-    if not out.is_ai:
-        reason = f" ({esc(str(out.fallback_reason))})" if out.fallback_reason else ""
-        st.markdown(
-            f'<div class="note note-info"><b>{esc(t("backup_used_title"))}</b>{esc(status_line(out))}{reason}</div>',
-            unsafe_allow_html=True,
-        )
-
-    # In Hindi mode, if backend text is English (e.g. from fallback or non-AI), show the notice
-    current_lang = st.session_state.get("lang", "en")
-    if current_lang == "hi" and not out.is_ai:
-        st.markdown(
-            f'<p class="backend-lang-note">{esc(t("backend_english_note"))}</p>',
-            unsafe_allow_html=True,
-        )
-
+    # Flags and Actions
     flags = clean_list(out.red_flags)
+    actions = clean_list(out.recommended_actions)
+
+    flags_html = ""
     if flags:
         fcls = {"SAFE": "f-safe", "SUSPICIOUS": "f-warn"}.get(key, "")
         items = "".join(f"<li>{esc(f)}</li>" for f in flags)
-        st.markdown(
-            f'<div class="sec"><h2>{esc(verdict_info["flags"])}</h2><ul class="flags {fcls}">{items}</ul></div>',
-            unsafe_allow_html=True,
-        )
+        flags_html = f'<div class="v-col"><h3 class="v-sec-title">{esc(verdict_info["flags"])}</h3><ul class="flags {fcls}">{items}</ul></div>'
 
-    actions = clean_list(out.recommended_actions)
+    steps_html = ""
     if actions:
         items = "".join(f"<li><span>{esc(a)}</span></li>" for a in actions)
-        st.markdown(
-            f'<div class="sec"><h2>{esc(t("what_to_do_now"))}</h2><ol class="steps">{items}</ol></div>',
-            unsafe_allow_html=True,
+        steps_html = f'<div class="v-col"><h3 class="v-sec-title">{esc(t("what_to_do_now"))}</h3><ol class="steps">{items}</ol></div>'
+
+    grid_cls = ""
+    if not flags or not actions:
+        grid_cls = "single-col"
+
+    # Badges for "How we checked this"
+    if out.is_ai:
+        ai_badge = (
+            f'<div class="check-badge">'
+            f'<span class="badge-dot"></span>'
+            f'<div class="badge-text"><strong>{esc(t("badge_ai_title"))}</strong>'
+            f'<small>{esc(t("badge_ai_sub"))}</small></div></div>'
+        )
+    else:
+        ai_badge = (
+            f'<div class="check-badge badge-neutral">'
+            f'<span class="badge-dot dot-neutral"></span>'
+            f'<div class="badge-text"><strong>{esc(t("badge_ai_off_title"))}</strong>'
+            f'<small>{esc(t("badge_ai_off_sub"))}</small></div></div>'
         )
 
-    st.markdown('<div class="sec"></div>', unsafe_allow_html=True)
+    rules_badge = (
+        f'<div class="check-badge">'
+        f'<span class="badge-dot"></span>'
+        f'<div class="badge-text"><strong>{esc(t("badge_rules_title"))}</strong>'
+        f'<small>{esc(t("badge_rules_sub"))}</small></div></div>'
+    )
 
-    with st.expander(t("how_checked_expander")):
-        st.markdown(f'<div class="detail"><p>{esc(status_line(out))}</p></div>', unsafe_allow_html=True)
-        findings = out.rule_results.findings if out.rule_results else []
-        if findings:
-            rows = ""
-            for f in findings:
-                details = ", ".join(esc(str(d)) for d in f.get("details", []))
-                rows += f'<li><b>{esc(str(f.get("category", "")))}</b>: {details}</li>'
-            st.markdown(
-                f'<div class="detail"><p>{esc(t("patterns_found"))}</p><ul>{rows}</ul></div>',
-                unsafe_allow_html=True,
-            )
-        else:
-            st.markdown(
-                f'<div class="detail"><p>{esc(t("no_patterns_found"))}</p></div>',
-                unsafe_allow_html=True,
-            )
+    dataset_badge = ""
+    if out.is_dataset_informed:
+        dataset_badge = (
+            f'<div class="check-badge">'
+            f'<span class="badge-dot"></span>'
+            f'<div class="badge-text"><strong>{esc(t("badge_dataset_title"))}</strong>'
+            f'<small>{esc(t("badge_dataset_sub"))}</small></div></div>'
+        )
 
+    # Patterns found
+    findings = out.rule_results.findings if out.rule_results else []
+    if findings:
+        chips = []
+        for f in findings:
+            details = ", ".join(esc(str(d)) for d in f.get("details", []))
+            cat = esc(str(f.get("category", "")))
+            chips.append(f'<span class="rule-chip"><strong>{cat}</strong>: {details}</span>')
+        patterns_html = (
+            f'<div class="rule-chips"><span class="chips-label">{esc(t("rule_patterns_label"))}</span>'
+            + "".join(chips)
+            + '</div>'
+        )
+    else:
+        patterns_html = f'<p class="no-patterns">{esc(t("no_patterns_found"))}</p>'
+
+    current_lang = st.session_state.get("lang", "en")
+    lang_hint_html = ""
+    if current_lang == "hi" and not out.is_ai:
+        lang_hint_html = f'<span class="compact-note note-en-hint">{esc(t("backend_english_note"))}</span>'
+
+    backup_note_html = ""
+    if not out.is_ai and out.fallback_reason:
+        backup_note_html = f'<p class="compact-note"><b>{esc(t("backup_used_title"))}:</b> {esc(str(out.fallback_reason))}</p>'
+
+    summary_sentence = get_check_summary(out)
+
+    card_html = (
+        f'<section class="verdict {verdict_info["cls"]}" role="status" aria-live="polite">'
+        f'<div class="v-header">'
+        f'  <div class="v-stamp-group">'
+        f'    <div class="stamp">{ICONS[key]}<span>{esc(verdict_info["title"])}</span></div>'
+        f'    <div class="v-headline">'
+        f'      <span class="v-type">{esc(str(out.scam_type))}</span>'
+        f'      <span class="v-lead">{esc(verdict_info["lead"])}</span>'
+        f'    </div>'
+        f'  </div>'
+        f'  {pill_html}'
+        f'</div>'
+        f'<p class="v-explain">{esc(str(out.explanation))}</p>'
+        + (f'<div class="v-grid {grid_cls}">{flags_html}{steps_html}</div>' if (flags_html or steps_html) else '')
+        + f'<div class="check-strip">'
+        f'  <div class="check-strip-header">'
+        f'    <h4>{esc(t("how_checked_heading"))}</h4>'
+        f'    {lang_hint_html}'
+        f'  </div>'
+        f'  <div class="badge-row">{ai_badge}{rules_badge}{dataset_badge}</div>'
+        f'  <p class="check-summary">{esc(summary_sentence)}</p>'
+        f'  {backup_note_html}'
+        f'  {patterns_html}'
+        f'</div>'
+        f'</section>'
+    )
+
+    st.markdown(card_html, unsafe_allow_html=True)
+
+    # Reference examples expander (below the strip, collapsed by default)
     refs = out.dataset_matches.matched_references if out.dataset_matches else []
     if SHOW_REFERENCE_EXAMPLES and refs:
         with st.expander(t("refs_expander")):
