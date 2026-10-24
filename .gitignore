@@ -12,6 +12,7 @@ env/
 
 # Python cache & build files
 __pycache__/
+*.pyc
 *.py[cod]
 *$py.class
 *.so
