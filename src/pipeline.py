@@ -75,7 +75,7 @@ class ScamShieldPipeline:
     def train_records_count(self) -> int:
         return self.dataset.train_count if self.dataset else 0
 
-    def analyze(self, text: str, api_key: Optional[str] = None) -> PipelineOutput:
+    def analyze(self, text: str, api_key: Optional[str] = None, language: str = "en") -> PipelineOutput:
         """
         Runs the full detection pipeline on the provided text.
         """
@@ -113,6 +113,7 @@ class ScamShieldPipeline:
                 rule_results=rule_results,
                 references=matched_refs,
                 api_key=api_key,
+                language=language,
             )
 
         # 4. Decision Engine Reconciliation

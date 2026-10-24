@@ -48,6 +48,7 @@ class GeminiAnalyzer:
         rule_results: RuleAnalysisResult,
         references: Optional[List[MatchedReference]] = None,
         api_key: Optional[str] = None,
+        language: str = "en",
     ) -> Dict[str, Any]:
         """
         Executes structured Gemini AI analysis augmented with rule findings
@@ -120,6 +121,12 @@ class GeminiAnalyzer:
             "7. Plain Language: Keep the explanation to ONE single, clear, reassuring sentence that an elderly parent can easily understand.\n"
             "8. Output MUST strictly conform to the provided JSON schema."
         )
+        if language == "hi":
+            system_instruction += (
+                "\n9. Language Requirement: Write the explanation, red_flags, and recommended_actions in simple, everyday Hindi (Devanagari script) "
+                "that an elderly parent or grandparent can easily understand. Keep the verdict as exactly 'SCAM', 'SUSPICIOUS', or 'SAFE' in English. "
+                "Keep numbers like 1930 and 14448, URLs, and brand names unchanged."
+            )
 
         user_prompt = f"""Analyze this message received by a user in India:
 

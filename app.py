@@ -1,1059 +1,1173 @@
 """
-Scam Shield (स्कैम शील्ड) - An accessible scam detection tool for India.
-Built with Streamlit, google-genai, and python-dotenv.
+Scam Shield - redesigned front end (Streamlit).
+
+Presentation only: every verdict, flag, step and status comes from
+ScamShieldPipeline.analyze(). Nothing is scored or invented here.
 """
 
 import os
-import re
-import json
 import html
-from typing import List, Dict, Any, Optional
-from pydantic import BaseModel, Field
-from dotenv import load_dotenv
+from typing import Optional
+
 import streamlit as st
+from dotenv import load_dotenv
 
 from src.pipeline import ScamShieldPipeline, PipelineOutput
 
-# Load environment variables from .env file (with override=True to detect user updates)
 load_dotenv(override=True)
 
-# Configuration constants for Gemini 3.5 Flash Lite
-MODEL_NAME = "gemini-3.5-flash-lite"
-REQUEST_TIMEOUT_MS = 20000  # 20 seconds finite timeout
-MAX_RETRIES = 0             # SDK retries are bounded; no multiple long retry loops
-
-
-@st.cache_resource
-def get_pipeline() -> ScamShieldPipeline:
-    """Initializes and caches the end-to-end detection pipeline."""
-    return ScamShieldPipeline()
-
-# ==============================================================================
-# 1. DATA MODELS & SCHEMAS
-# ==============================================================================
-
-class ScamAnalysisResult(BaseModel):
-    """Structured response schema for Gemini AI scam analysis."""
-    verdict: str = Field(
-        description="Must be exactly 'SCAM', 'SUSPICIOUS', or 'SAFE'."
-    )
-    scam_type: str = Field(
-        description="Category/type of message, e.g. 'Electricity Bill Scam', 'Bank KYC / Phishing APK', 'WhatsApp Lottery Scam', 'Digital Arrest Threat', 'Legitimate Transactional Alert'."
-    )
-    explanation: str = Field(
-        description="A single clear, reassuring, plain-language sentence explaining the verdict, suitable for a parent or grandparent."
-    )
-    red_flags: List[str] = Field(
-        description="2 to 3 concise bullet points highlighting specific warning signs or why the message is considered safe."
-    )
-    recommended_actions: List[str] = Field(
-        description="2 to 3 practical, concrete next steps the user should take immediately (e.g. block sender, do not click link, call 1930)."
-    )
-    confidence: str = Field(
-        description="Confidence level: 'HIGH', 'MEDIUM', or 'LOW'."
-    )
-
-
-# ==============================================================================
-# 2. SAMPLE MESSAGES FOR EASY BEGINNER TESTING
-# ==============================================================================
+# Reference examples come from a mostly synthetic, not-yet-reviewed dataset.
+# Set to False to hide them from users until the data is approved for display.
+SHOW_REFERENCE_EXAMPLES = True
 
 SAMPLE_MESSAGES = {
-    "⚡ Electricity Disconnection": (
+    "Electricity cut-off": (
         "Dear Consumer, Your Electricity power will be disconnected tonight at 9:30 PM from "
         "the electricity office because your previous month bill was not updated. Please immediately "
         "contact our electricity officer Rahul Sharma at 9876543210 or update bill through link: "
         "http://bit.ly/bijli-bill-pay"
     ),
-    "🏦 SBI / YONO KYC Expiry APK": (
+    "Bank KYC app": (
         "Dear Customer, Your SBI YONO account has been suspended due to pending KYC verification. "
         "Please click the link below to download our KYC update app and prevent account freeze: "
         "http://sbi-yono-update.xyz/app.apk. Do not ignore."
     ),
-    "🎁 WhatsApp ₹25 Lakh KBC Lottery": (
+    "KBC lottery": (
         "Badhai ho! Aapka number KBC WhatsApp lucky draw me chuna gaya hai aur aapne jeete hain "
         "₹25,00,000 cash prize. Apne inaam ki rashi pane ke liye turant WhatsApp karein Rana Pratap Singh "
         "ko 9123456789 par aur registration fee ₹2,500 jama karein."
     ),
-    "👮 Digital Arrest / Courier Threat": (
+    "Digital arrest": (
         "URGENT NOTICE: This is Inspector Ajay Kumar from Mumbai Cyber Crime Branch. A FedEx parcel sent "
         "to Taiwan under your Aadhaar details contains 5 fake passports and 140 grams of narcotics. "
         "An FIR has been registered. You must connect on Skype immediately for interrogation under "
         "Digital Arrest warrant to avoid arrest."
     ),
-    "✅ Legitimate Bank Transaction": (
+    "Real bank alert": (
         "Dear Customer, your A/C XX4921 has been debited by Rs 1,250.00 on 22-Oct-26 at Apollo Pharmacy "
         "via UPI. Avail Bal: Rs 24,180.50. If not done by you, call 1800-11-2211 or SMS NO to 567676 - State Bank of India"
-    )
+    ),
 }
 
+SAMPLE_BUTTON_MAPPING = [
+    ("sample_electricity", "Electricity cut-off"),
+    ("sample_kyc", "Bank KYC app"),
+    ("sample_kbc", "KBC lottery"),
+    ("sample_arrest", "Digital arrest"),
+    ("sample_bank", "Real bank alert"),
+]
 
-# ==============================================================================
-# 3. RULE-BASED DETECTION ENGINE (TRANSPARENT HEURISTICS)
-# ==============================================================================
+STRINGS = {
+    "en": {
+        "page_title": "Scam Shield: check a suspicious message",
+        "brand_name": "Scam Shield",
+        "lost_money_call": "Lost money? Call 1930",
+        "phone_call_bar": "Lost money? Call 1930",
+        "dark_mode": "Dark mode",
+        "language_label": "Language",
 
-def analyze_rules(text: str) -> Dict[str, Any]:
-    """
-    Performs transparent, explainable heuristic checks tailored to common scams in India.
-    Supports English, Hindi, and Hinglish phrases.
-    """
-    lower = text.lower()
-    findings = []
-    
-    # Check 1: Urgent Threats & Panic Inducers (English + Hinglish/Hindi)
-    threat_patterns = [
-        (r"\b(disconnected tonight|power cutoff|electricity cut|bijli kat|bijli cut|aaj raat bijli)\b", "Electricity disconnection threat tonight", "HIGH"),
-        (r"\b(account suspended|account blocked|khata band|card blocked|sim block|sim band)\b", "Threat of account or SIM deactivation", "HIGH"),
-        (r"\b(immediately|within 24 hours|within 2 hrs|within 1 hour|turant|aakhri mauka|final notice|last notice)\b", "Artificial urgency / short deadline pressure", "MEDIUM"),
-        (r"\b(digital arrest|arrest warrant|fir registered|cbi custody|ed interrogation|narcotics parcel|giraftari|police karyawahi)\b", "Severe threat of police arrest, drugs parcel, or Digital Arrest", "CRITICAL"),
-    ]
-    urgency_hits = []
-    max_urgency_sev = "LOW"
-    for pattern, description, sev in threat_patterns:
-        if re.search(pattern, lower):
-            urgency_hits.append(description)
-            if sev == "CRITICAL" or (sev == "HIGH" and max_urgency_sev != "CRITICAL"):
-                max_urgency_sev = sev
-            elif sev == "MEDIUM" and max_urgency_sev == "LOW":
-                max_urgency_sev = "MEDIUM"
-    if urgency_hits:
-        findings.append({
-            "category": "Urgent Threats & Fear Tactics",
-            "icon": "⏱️",
-            "details": urgency_hits,
-            "severity": max_urgency_sev
-        })
+        # Intro
+        "intro_heading": "Got a message that feels wrong? Check it before you act.",
+        "intro_p1": "Paste the SMS, WhatsApp or email text below. We will tell you if it looks like a scam and what to do next.",
+        "intro_p2": "संदेश यहाँ पेस्ट करें। हम बताएँगे कि यह स्कैम तो नहीं।",
 
-    # Check 2: Sensitive Credential & Data Harvesting
-    credential_patterns = [
-        (r"\b(otp|one time password|apna otp|otp bheje|otp batayein|share otp|send otp)\b", "Requesting One-Time Password (OTP)", "CRITICAL"),
-        (r"\b(mpin|upi pin|pin number|atm pin|cvv|password)\b", "Requesting security PIN, CVV, or password", "CRITICAL"),
-        (r"\b(pan card details|aadhaar link|update kyc|kyc expired|yono kyc|kyc update|pending kyc|kyc verification|re-kyc)\b", "Urgent KYC or Aadhaar/PAN verification demand", "HIGH"),
-    ]
-    cred_hits = []
-    max_cred_sev = "LOW"
-    for pattern, description, sev in credential_patterns:
-        if re.search(pattern, lower):
-            cred_hits.append(description)
-            if sev == "CRITICAL" or (sev == "HIGH" and max_cred_sev != "CRITICAL"):
-                max_cred_sev = sev
-    if cred_hits:
-        findings.append({
-            "category": "Credential & KYC Demands",
-            "icon": "🔑",
-            "details": cred_hits,
-            "severity": max_cred_sev
-        })
+        # Input
+        "input_label": "Paste the message here",
+        "input_placeholder": "Example: Dear customer, your electricity will be cut tonight. Call 98xxxxxx10 to pay the pending bill.",
+        "privacy_note": "Do not paste passwords, PINs or OTPs.",
+        "check_button": "Check message",
+        "clear_button": "Clear",
 
-    # Check 3: Shortened URLs, Lookalike Domains, & APK Downloads
-    link_patterns = [
-        (r"\b[\w\-.]+\.apk\b", "Direct Android Application Package (.apk) download link (High malware risk)", "CRITICAL"),
-        (r"\b(bit\.ly|tinyurl\.com|is\.gd|t\.co|cutt\.ly|rb\.gy|shorturl\.at|goo\.gl|ow\.ly)\b", "Shortened / obfuscated URL detected", "HIGH"),
-        (r"\b(?:https?:\/\/)?\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?::\d+)?(?:\/\S*)?\b", "Suspicious raw IP address link instead of domain", "HIGH"),
-        (r"\.(xyz|top|online|click|site|work|vip|live|loan|cam|rest|space)\b", "Uncommon or high-risk domain extension (.xyz, .top, etc.)", "HIGH"),
-        (r"\b(?:sbi|yono|hdfc|icici|electricity|bijli|trai|epfo)[\w\-]*\.(?:com|org|net|xyz|site|info)\b", "Potential lookalike / fake brand domain", "HIGH")
-    ]
-    link_hits = []
-    max_link_sev = "LOW"
-    for pattern, description, sev in link_patterns:
-        if re.search(pattern, lower):
-            link_hits.append(description)
-            if sev == "CRITICAL" or (sev == "HIGH" and max_link_sev != "CRITICAL"):
-                max_link_sev = sev
-    if link_hits:
-        findings.append({
-            "category": "Suspicious Links & Downloads",
-            "icon": "🔗",
-            "details": link_hits,
-            "severity": max_link_sev
-        })
+        # Examples
+        "try_example": "Try an example message",
+        "sample_electricity": "Electricity cut-off",
+        "sample_kyc": "Bank KYC app",
+        "sample_kbc": "KBC lottery",
+        "sample_arrest": "Digital arrest",
+        "sample_bank": "Real bank alert",
 
-    # Check 4: Payment Demands, Lottery Claims & Advance Fees
-    payment_patterns = [
-        (r"\b(kbc|lottery|lucky draw|inaam|jeete hain|won \d+|cash prize|25 lakh)\b", "Unsolicited lottery or prize winnings announcement", "HIGH"),
-        (r"\b(registration fee|processing fee|advance charge|tax deposit|shulk)\b", "Demanding advance payment or registration fee", "HIGH"),
-        (r"\b(scan qr code to receive|enter upi pin to receive|receive money via qr)\b", "Fraudulent claim that entering UPI PIN receives money", "CRITICAL"),
-    ]
-    pay_hits = []
-    max_pay_sev = "LOW"
-    for pattern, description, sev in payment_patterns:
-        if re.search(pattern, lower):
-            pay_hits.append(description)
-            if sev == "CRITICAL" or (sev == "HIGH" and max_pay_sev != "CRITICAL"):
-                max_pay_sev = sev
-    if pay_hits:
-        findings.append({
-            "category": "Payment Demands & Lottery Traps",
-            "icon": "💸",
-            "details": pay_hits,
-            "severity": max_pay_sev
-        })
+        # Progress / State notices
+        "spinner_text": "Reading the message. This can take a few seconds.",
+        "empty_title": "Nothing to check yet",
+        "empty_body": 'Paste a message in the box above, or open "Try an example message".',
+        "error_title": "We could not check this message",
+        "error_body": 'This is not a safe or unsafe result. Press "Check message" to try again. If it keeps failing, do not trust the message until you have verified it another way.',
+        "backup_used_title": "Backup check used",
 
-    # Check 5: Impersonation of Government / Banks / Utilities
-    impersonation_patterns = [
-        (r"\b(sbi|yono|hdfc|icici|pnb|axis bank|state bank)\b", "Bank name mentioned"),
-        (r"\b(electricity office|bijli vibhag|power board|mahavitaran|bescom|bses|uppcl|tneb|discom)\b", "Power / Electricity Board mention"),
-        (r"\b(trai|telecom authority|department of telecommunications|dot|india post|customs department)\b", "Government department or regulatory agency mention"),
-        (r"\b(mumbai police|delhi police|cbi|cyber cell|enforcement directorate)\b", "Law enforcement or investigative agency mention"),
-    ]
-    imp_hits = []
-    for pattern, description in impersonation_patterns:
-        if re.search(pattern, lower):
-            imp_hits.append(description)
-    if imp_hits:
-        findings.append({
-            "category": "Official Organization Mentions",
-            "icon": "🏛️",
-            "details": imp_hits,
-            "severity": "MEDIUM"
-        })
+        # Verdicts
+        "verdict_scam_title": "Likely scam",
+        "verdict_scam_lead": "Do not reply, click or pay.",
+        "verdict_scam_flags": "Why it looks like a scam",
 
-    # Calculate heuristic score
-    score = 0
-    for f in findings:
-        if f["severity"] == "CRITICAL":
-            score += 4
-        elif f["severity"] == "HIGH":
-            score += 2
-        elif f["severity"] == "MEDIUM":
-            score += 1
+        "verdict_warn_title": "Needs verification",
+        "verdict_warn_lead": "Don't act on this yet. Check it another way first.",
+        "verdict_warn_flags": "What looks concerning",
 
-    return {
-        "score": score,
-        "findings": findings,
-        "has_high_risk": any(f["severity"] in ["CRITICAL", "HIGH"] for f in findings)
-    }
+        "verdict_safe_title": "No clear scam signs found",
+        "verdict_safe_lead": "This does not prove the sender is genuine.",
+        "verdict_safe_flags": "What we noticed",
 
+        # Confidence & Sections
+        "confidence_label": "How sure we are",
+        "confidence_high": "High",
+        "confidence_medium": "Medium",
+        "confidence_low": "Low",
 
-# ==============================================================================
-# 4. GEMINI AI ANALYSIS VIA GOOGLE GEN AI SDK
-# ==============================================================================
+        "what_to_do_now": "What to do now",
+        "backend_english_note": "नीचे दिया गया विवरण अंग्रेज़ी में है।",
 
-def analyze_with_gemini(text: str, rule_signals: Dict[str, Any], api_key: str) -> Dict[str, Any]:
-    """
-    Analyzes message with Gemini 3.5 Flash Lite using the official google-genai SDK.
-    Configured with 20s request timeout, bounded SDK retries, and structured Pydantic schema.
-    """
-    try:
-        from google import genai
-        from google.genai import types
-        from google.genai.errors import APIError
-        import httpx
-    except ImportError:
-        return {
-            "error_type": "SDK_IMPORT_ERROR",
-            "error_title": "Library Import Error",
-            "error_message": "The google-genai library is not properly installed. Please verify your environment."
-        }
+        # Status lines
+        "status_ai_rules_refs": "Checked with AI, warning-sign rules and similar known examples.",
+        "status_ai_rules": "Checked with AI and warning-sign rules.",
+        "status_rules_refs": "The AI check was not used this time. This result comes from built-in rules and similar known examples.",
+        "status_rules_only": "The AI check was not used this time. This result comes from built-in rules only.",
 
-    # Format the rule findings for the prompt
-    rule_summary = []
-    for item in rule_signals.get("findings", []):
-        rule_summary.append(f"- {item['category']} ({item['severity']}): {', '.join(item['details'])}")
-    rule_context = "\n".join(rule_summary) if rule_summary else "No automatic heuristic patterns were triggered."
+        # Expanders
+        "how_checked_expander": "How this was checked",
+        "patterns_found": "Patterns the rules found in the message:",
+        "no_patterns_found": "The rules did not match any known warning-sign pattern. That does not prove the message is genuine.",
 
-    system_instruction = (
-        "You are 'Scam Shield', an expert digital fraud investigator and empathetic cyber safety assistant for families in India.\n"
-        "Your mission is to protect elderly parents, grandparents, and first-time smartphone users from cyber financial fraud.\n\n"
-        "GUIDELINES & CONSTRAINTS:\n"
-        "1. Understand Indian scam modalities thoroughly: Electricity bill disconnection threats, Fake SBI/HDFC/ICICI KYC expiry, "
-        "malicious Android APK downloads, WhatsApp KBC lottery fees, Digital Arrest / Police Skype interrogation threats, "
-        "and UPI QR code payment inversion tricks.\n"
-        "2. Seamlessly understand English, Hindi (Devanagari), and Hinglish (Hindi written in Roman script, e.g., 'bijli kat jayegi', 'turant sampark karein').\n"
-        "3. NEVER treat keyword matches alone as proof of a scam. Legitimate bank transaction SMS (e.g. 'Rs 500 debited for groceries') contains bank names and amounts but is safe.\n"
-        "4. If evidence is incomplete, ambiguous, or suspicious, ALWAYS choose 'SUSPICIOUS' rather than 'SAFE'. Erring on the side of caution protects the elderly.\n"
-        "5. A 'SAFE' verdict explicitly means NO major warning signs were identified in the supplied text, NOT that the message is guaranteed authentic.\n"
-        "6. NEVER claim or imply that this message has been verified or endorsed by any bank, police department, or government agency.\n"
-        "7. Keep the explanation to ONE single, clear, reassuring sentence that an elderly parent or grandparent can easily grasp.\n"
-        "8. Output MUST strictly adhere to the provided JSON schema."
-    )
+        "refs_expander": "Similar example messages we compared",
+        "refs_note": "These are examples from our reference collection, not proof about your message. Many are written for testing.",
+        "ref_synthetic": "Written for testing",
+        "ref_real": "Real message from a public collection",
 
-    user_prompt = f"""Analyze this message received by a user in India:
+        # Right Rail
+        "rail_heading": "Already lost money or shared an OTP?",
+        "rail_p1": "Act quickly. Reporting early gives the bank a better chance to hold the transfer.",
+        "rail_call": "Call 1930",
+        "rail_cybercrime": "File a complaint: ",
+        "rail_sanchar": "Report a fraud call or message (Chakshu): ",
+        "rail_rbi": "Bank complaint not resolved: RBI helpline ",
+        "rail_privacy_heading": "Your privacy",
+        "rail_privacy_body": "The message text is checked as you submit it. When the AI check is on, it is sent to Google Gemini. Do not paste passwords, PINs or OTPs.",
+        "rail_about_heading": "About Scam Shield",
+        "rail_about_p1": "A free helper for families in India to spot scam messages in English, Hindi and Hinglish.",
+        "rail_about_p2": "It reads the text of a message only. It cannot confirm who sent it, and no bank, police body or government department has checked or endorsed a result. Treat it as a second opinion, not a guarantee.",
+    },
+    "hi": {
+        "page_title": "Scam Shield: संदिग्ध संदेश की जाँच करें",
+        "brand_name": "Scam Shield",
+        "lost_money_call": "पैसे डूब गए? 1930 पर कॉल करें",
+        "phone_call_bar": "पैसे डूब गए? 1930 पर कॉल करें",
+        "dark_mode": "डार्क मोड",
+        "language_label": "भाषा",
 
---- MESSAGE CONTENT ---
-{text}
---- END MESSAGE ---
+        # Intro
+        "intro_heading": "कोई ऐसा संदेश मिला जो सही नहीं लग रहा? कुछ करने से पहले जाँच लें।",
+        "intro_p1": "नीचे SMS, WhatsApp या ईमेल का संदेश पेस्ट करें। हम बताएँगे कि यह स्कैम लग रहा है या नहीं, और आगे क्या करना है।",
+        "intro_p2": "संदेश यहाँ पेस्ट करें। हम बताएँगे कि यह स्कैम तो नहीं।",
 
-Pre-computed Heuristic Safety Signals:
-{rule_context}
+        # Input
+        "input_label": "संदेश यहाँ पेस्ट करें",
+        "input_placeholder": "उदाहरण: Dear customer, your electricity will be cut tonight. Call 98xxxxxx10 to pay the pending bill.",
+        "privacy_note": "पासवर्ड, PIN या OTP यहाँ पेस्ट न करें।",
+        "check_button": "संदेश जाँचें",
+        "clear_button": "हटाएँ",
 
-Please provide your evaluation with a verdict of SCAM, SUSPICIOUS, or SAFE."""
+        # Examples
+        "try_example": "उदाहरण संदेश आज़माएँ",
+        "sample_electricity": "बिजली बिल फ्रॉड",
+        "sample_kyc": "बैंक KYC ऐप",
+        "sample_kbc": "KBC लॉटरी",
+        "sample_arrest": "डिजिटल अरेस्ट",
+        "sample_bank": "असली बैंक अलर्ट",
 
-    # Set finite request timeout and bound SDK automatic retries
-    http_opts = types.HttpOptions(
-        timeout=REQUEST_TIMEOUT_MS,
-        retry_options=types.HttpRetryOptions(attempts=1),
-    )
-    client = genai.Client(api_key=api_key, http_options=http_opts)
+        # Progress / State notices
+        "spinner_text": "संदेश पढ़ा जा रहा है। इसमें कुछ सेकंड लग सकते हैं।",
+        "empty_title": "अभी जाँचने के लिए कुछ नहीं है",
+        "empty_body": 'ऊपर दिए गए बॉक्स में कोई संदेश पेस्ट करें, या "उदाहरण संदेश आज़माएँ" खोलें।',
+        "error_title": "हम इस संदेश की जाँच नहीं कर सके",
+        "error_body": 'यह सुरक्षित या असुरक्षित का फ़ैसला नहीं है। दोबारा कोशिश करने के लिए "संदेश जाँचें" दबाएँ। अगर बार-बार ऐसा हो, तो जब तक किसी अन्य तरीके से पुष्टि न हो जाए, संदेश पर भरोसा न करें।',
+        "backup_used_title": "बैकअप जाँच का इस्तेमाल हुआ",
 
-    # Configure Gemini 3.5 Flash Lite with structured Pydantic schema
-    config = types.GenerateContentConfig(
-        system_instruction=system_instruction,
-        response_mime_type="application/json",
-        response_schema=ScamAnalysisResult,
-    )
+        # Verdicts
+        "verdict_scam_title": "स्कैम होने की पूरी संभावना",
+        "verdict_scam_lead": "कोई जवाब न दें, लिंक पर क्लिक न करें और पैसे न भेजें।",
+        "verdict_scam_flags": "यह स्कैम क्यों लग रहा है",
 
-    last_error_dict = None
+        "verdict_warn_title": "जाँच-पड़ताल की ज़रूरत है",
+        "verdict_warn_lead": "जल्दबाज़ी में कुछ न करें। पहले किसी और तरीके से पता करें।",
+        "verdict_warn_flags": "इसमें क्या चिंताजनक है",
 
-    for attempt in range(MAX_RETRIES + 1):
-        try:
-            response = client.models.generate_content(
-                model=MODEL_NAME,
-                contents=user_prompt,
-                config=config,
-            )
+        "verdict_safe_title": "स्कैम का कोई साफ़ संकेत नहीं मिला",
+        "verdict_safe_lead": "यह साबित नहीं करता कि संदेश भेजने वाला पूरी तरह असली है।",
+        "verdict_safe_flags": "हमने क्या पाया",
 
-            if not response.text:
-                return {
-                    "error_type": "EMPTY_RESPONSE",
-                    "error_title": "Empty AI Response",
-                    "error_message": "AI service returned an empty response. Please try again."
-                }
+        # Confidence & Sections
+        "confidence_label": "हम कितने आश्वस्त हैं",
+        "confidence_high": "ज़्यादा",
+        "confidence_medium": "मध्यम",
+        "confidence_low": "कम",
 
-            try:
-                data = json.loads(response.text)
-            except json.JSONDecodeError:
-                return {
-                    "error_type": "JSON_PARSE_ERROR",
-                    "error_title": "Malformed AI Output",
-                    "error_message": "AI service returned output that could not be parsed as structured JSON."
-                }
+        "what_to_do_now": "अब क्या करें",
+        "backend_english_note": "नीचे दिया गया विवरण अंग्रेज़ी में है।",
 
-            # Validate fields
-            verdict = str(data.get("verdict", "SUSPICIOUS")).upper().strip()
-            if verdict not in ["SCAM", "SUSPICIOUS", "SAFE"]:
-                verdict = "SUSPICIOUS"
+        # Status lines
+        "status_ai_rules_refs": "AI, ख़तरे के नियमों और जाने-पहचाने उदाहरणों की मदद से जाँचा गया।",
+        "status_ai_rules": "AI और ख़तरे के नियमों की मदद से जाँचा गया।",
+        "status_rules_refs": "इस बार AI जाँच का उपयोग नहीं हुआ। यह परिणाम इन-बिल्ट नियमों और जाने-पहचाने उदाहरणों पर आधारित है।",
+        "status_rules_only": "इस बार AI जाँच का उपयोग नहीं हुआ। यह परिणाम केवल इन-बिल्ट नियमों पर आधारित है।",
 
-            return {
-                "success": True,
-                "is_ai": True,
-                "model_used": MODEL_NAME,
-                "verdict": verdict,
-                "scam_type": data.get("scam_type", "Suspicious Communication"),
-                "explanation": data.get("explanation", "Please exercise caution with this message."),
-                "red_flags": data.get("red_flags", ["Unusual communication pattern"]),
-                "recommended_actions": data.get("recommended_actions", ["Do not click any links", "Do not share OTP"]),
-                "confidence": data.get("confidence", "MEDIUM")
-            }
+        # Expanders
+        "how_checked_expander": "इसकी जाँच कैसे हुई",
+        "patterns_found": "संदेश में नियमों द्वारा पाए गए संदिग्ध संकेत:",
+        "no_patterns_found": "नियमों को कोई जाना-पहचाना ख़तरे का संकेत नहीं मिला। इसका मतलब यह नहीं कि संदेश पूरी तरह असली है।",
 
-        except APIError as api_err:
-            err_msg = str(api_err)
-            err_code = getattr(api_err, "code", None)
+        "refs_expander": "मिलते-जुलते उदाहरण जिनकी हमने तुलना की",
+        "refs_note": "ये हमारे संदर्भ संग्रह के उदाहरण हैं, आपके संदेश का कोई पक्का सबूत नहीं। इनमें से कई सिर्फ़ टेस्टिंग के लिए लिखे गए हैं।",
+        "ref_synthetic": "टेस्टिंग के लिए लिखा गया",
+        "ref_real": "सार्वजनिक संग्रह का असली संदेश",
 
-            # 1. Invalid API Key (400, 401, 403)
-            if err_code in [400, 401, 403] or any(k in err_msg.lower() for k in ["api_key_invalid", "api key not valid", "permission_denied"]):
-                return {
-                    "error_type": "AUTH_ERROR",
-                    "error_title": "Authentication Error",
-                    "error_message": "AI service could not authenticate."
-                }
+        # Right Rail
+        "rail_heading": "क्या पैसे कट गए या OTP शेयर कर दिया?",
+        "rail_p1": "तुरंत कदम उठाएँ। जितनी जल्दी शिकायत करेंगे, बैंक के पास पैसे रोकने का उतना ही बेहतर मौका होगा।",
+        "rail_call": "1930 पर कॉल करें",
+        "rail_cybercrime": "ऑनलाइन शिकायत दर्ज करें: ",
+        "rail_sanchar": "फ़्रॉड कॉल या मैसेज की रिपोर्ट करें (चक्षु): ",
+        "rail_rbi": "बैंक में शिकायत का हल न मिले तो RBI हेल्पलाइन ",
+        "rail_privacy_heading": "आपकी गोपनीयता",
+        "rail_privacy_body": "संदेश सबमिट करते ही उसकी जाँच होती है। जब AI जाँच चालू होती है, तो यह Google Gemini को भेजा जाता है। पासवर्ड, PIN या OTP यहाँ पेस्ट न करें।",
+        "rail_about_heading": "Scam Shield के बारे में",
+        "rail_about_p1": "भारत में परिवारों के लिए English, Hindi और Hinglish संदेशों में स्कैम पहचानने वाला एक मुफ़्त मददगार।",
+        "rail_about_p2": "यह केवल संदेश का टेक्स्ट पढ़ता है। यह पुष्टि नहीं कर सकता कि संदेश किसने भेजा, और किसी भी बैंक, पुलिस या सरकारी विभाग ने इस परिणाम की पुष्टि नहीं की है। इसे केवल एक सलाह समझें, कोई पक्की गारंटी नहीं।",
+    },
+}
 
-            # 2. Unsupported Model (404)
-            if err_code == 404 or any(k in err_msg.lower() for k in ["not found", "is not supported", "unsupported model"]):
-                return {
-                    "error_type": "UNSUPPORTED_MODEL",
-                    "error_title": "Model Unavailable",
-                    "error_message": "The AI model is currently unavailable."
-                }
+ICONS = {
+    "SCAM": '<svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="8.5,2.5 15.5,2.5 21.5,8.5 21.5,15.5 15.5,21.5 8.5,21.5 2.5,15.5 2.5,8.5"/><path d="M9 9l6 6M15 9l-6 6"/></svg>',
+    "SUSPICIOUS": '<svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3L22 20H2L12 3z"/><path d="M12 10v4.5M12 17.2v.1"/></svg>',
+    "SAFE": '<svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><path d="M7.5 12.5l3 3 6-6.5"/></svg>',
+}
 
-            # 3. Quota / Rate limit (429)
-            if err_code == 429 or any(k in err_msg.lower() for k in ["resource_exhausted", "quota", "rate limit"]):
-                return {
-                    "error_type": "RATE_LIMIT",
-                    "error_title": "Service Busy",
-                    "error_message": "AI service is currently experiencing high demand. Please try again shortly."
-                }
+SHIELD_LOGO = (
+    '<svg viewBox="0 0 32 32" width="30" height="30" aria-hidden="true">'
+    '<path d="M16 2.5l11 4v8.2c0 7-4.6 12.2-11 14.8C9.6 26.9 5 21.7 5 14.7V6.5l11-4z" fill="var(--brand)"/>'
+    '<path d="M10.8 15.6l3.7 3.7 7-7.6" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>'
+    '</svg>'
+)
 
-            # 4. Timeout (408, 504)
-            if err_code in [408, 504] or any(k in err_msg.lower() for k in ["deadline_exceeded", "deadline expired", "timed out"]):
-                last_error_dict = {
-                    "error_type": "TIMEOUT",
-                    "error_title": "Request Timed Out",
-                    "error_message": "AI service did not respond within the expected time."
-                }
-                if attempt < MAX_RETRIES:
-                    continue
-                return last_error_dict
-
-            # 5. Temporary High Demand / Service Unavailable (503)
-            if err_code == 503 or "503" in err_msg or any(k in err_msg.lower() for k in ["high demand", "unavailable"]):
-                last_error_dict = {
-                    "error_type": "SERVICE_UNAVAILABLE",
-                    "error_title": "Service Unavailable",
-                    "error_message": "AI service is temporarily unavailable. Please try again shortly."
-                }
-                if attempt < MAX_RETRIES:
-                    continue
-                return last_error_dict
-
-            # Other API Errors (never leak raw error messages or traces to users)
-            last_error_dict = {
-                "error_type": "API_ERROR",
-                "error_title": "AI Service Error",
-                "error_message": "AI service returned an unexpected response."
-            }
-            if attempt < MAX_RETRIES and err_code in [500, 502]:
-                continue
-            return last_error_dict
-
-        except (httpx.TimeoutException, TimeoutError):
-            last_error_dict = {
-                "error_type": "TIMEOUT",
-                "error_title": "Connection Timed Out",
-                "error_message": "Network request to AI service timed out."
-            }
-            if attempt < MAX_RETRIES:
-                continue
-            return last_error_dict
-
-        except (httpx.ConnectError, httpx.NetworkError):
-            last_error_dict = {
-                "error_type": "NETWORK_ERROR",
-                "error_title": "Network Connection Error",
-                "error_message": "Could not connect to AI service. Please check your internet connection."
-            }
-            if attempt < MAX_RETRIES:
-                continue
-            return last_error_dict
-
-        except Exception:
-            last_error_dict = {
-                "error_type": "UNEXPECTED_ERROR",
-                "error_title": "Unexpected Error",
-                "error_message": "An unexpected error occurred during AI analysis."
-            }
-            break
-
-    return last_error_dict or {
-        "error_type": "UNKNOWN_ERROR",
-        "error_title": "Analysis Incomplete",
-        "error_message": "Could not complete AI analysis."
-    }
+esc = html.escape
 
 
-# ==============================================================================
-# 5. FALLBACK HEURISTIC-ONLY EVALUATION (WHEN API KEY IS NOT CONFIGURED)
-# ==============================================================================
+def t(key: str) -> str:
+    lang = st.session_state.get("lang", "en")
+    return STRINGS.get(lang, STRINGS["en"]).get(key, STRINGS["en"].get(key, key))
 
-def analyze_heuristic_fallback(text: str, rule_signals: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Provides an emergency fallback risk appraisal based on rule heuristics when
-    no Gemini API key is configured. Ensures the app remains 100% testable.
-    """
-    score = rule_signals.get("score", 0)
-    findings = rule_signals.get("findings", [])
-    
-    flag_descriptions = []
-    for f in findings:
-        for detail in f.get("details", []):
-            flag_descriptions.append(f"{f['icon']} {detail}")
 
-    # Heuristic classification
-    has_critical = any(f.get("severity") == "CRITICAL" for f in findings)
+def get_css(theme: str, lang: str) -> str:
+    is_dark = (theme == "dark")
+    is_hi = (lang == "hi")
 
-    if has_critical or score >= 3:
-        verdict = "SCAM"
-        scam_type = "High-Risk Fraud Pattern (Heuristic Detection)"
-        explanation = "This message contains multiple severe warning signs typical of known scams in India, such as urgent threats, payment demands, or credential requests."
-        actions = [
-            "Do NOT click any link, scan QR codes, or download any APK file.",
-            "Never share your OTP, PIN, or password with anyone.",
-            "Block the sender number immediately and report to 1930 if money was lost."
-        ]
-        confidence = "HIGH"
-    elif score >= 1:
-        verdict = "SUSPICIOUS"
-        scam_type = "Potential Risk (Heuristic Detection)"
-        explanation = "This message contains suspicious urgency or link patterns that require caution before taking any action."
-        actions = [
-            "Verify independently using the official helpline or website of the company/bank.",
-            "Do NOT use any phone numbers or links provided inside this message.",
-            "Consult a tech-savvy family member or call the 1930 Cyber Helpline."
-        ]
-        confidence = "MEDIUM"
+    # Dark palette meets WCAG AA contrast (>= 4.5:1 for body, >= 3:1 for large text)
+    if is_dark:
+        colors = """
+  --bg:#0F172A; --surface:#1E293B; --ink:#F8FAFC; --muted:#94A3B8; --line:#334155;
+  --brand:#3B82F6; --brand-soft:#1E294D; --brand-link:#60A5FA;
+  --stamp-bg:rgba(15,23,42,0.85);
+  --scam:#F87171; --scam-tint:#2A1215; --scam-edge:#7F1D1D;
+  --warn:#FBBF24; --warn-tint:#271C07; --warn-edge:#78350F;
+  --safe:#34D399; --safe-tint:#0A2318; --safe-edge:#065F46;
+  --note-info-bg:#1E294D; --note-info-border:#3B4E82;
+  --note-err-bg:#261E26; --note-err-border:#523C4D;
+  --textarea-border:#475569; --btn-sec-border:#475569;
+        """
     else:
-        # Rule: If evidence is incomplete or uncertain, use SUSPICIOUS rather than SAFE!
-        verdict = "SUSPICIOUS"
-        scam_type = "Unverified Text (Heuristic Preview)"
-        explanation = "No obvious scam keywords were matched by the built-in rule checks, but further verification is recommended to ensure safety."
-        flag_descriptions = [
-            "No standard trigger keywords matched by built-in heuristics",
-            "Contextual intent could not be evaluated by AI checks"
-        ]
-        actions = [
-            "Always verify independently through official apps rather than SMS links.",
-            "Never share OTPs, PINs, or passwords with unverified contacts.",
-            "If in doubt, consult a tech-savvy family member or call the 1930 Cyber Helpline."
-        ]
-        confidence = "LOW"
+        colors = """
+  --bg:#F4F6F8; --surface:#FFFFFF; --ink:#172033; --muted:#46526A; --line:#CBD3DE;
+  --brand:#1D2F6F; --brand-soft:#E6EAF6; --brand-link:#1D2F6F;
+  --stamp-bg:rgba(255,255,255,0.65);
+  --scam:#A5180E; --scam-tint:#FDECEA; --scam-edge:#F0B8B2;
+  --warn:#7A4400; --warn-tint:#FFF3D6; --warn-edge:#E8C46A;
+  --safe:#13663A; --safe-tint:#E6F4EB; --safe-edge:#A9D5B8;
+  --note-info-bg:var(--brand-soft); --note-info-border:#B9C3E6;
+  --note-err-bg:#EEF0F4; --note-err-border:#9AA6BF;
+  --textarea-border:#7C889C; --btn-sec-border:#9AA6BF;
+        """
 
-    return {
-        "success": True,
-        "is_fallback": True,
-        "verdict": verdict,
-        "scam_type": scam_type,
-        "explanation": explanation,
-        "red_flags": flag_descriptions[:3] if flag_descriptions else ["No obvious keyword triggers detected"],
-        "recommended_actions": actions,
-        "confidence": confidence
-    }
+    # Add ~0.1 to line-height for Hindi (Devanagari)
+    lh_body = "1.65" if is_hi else "1.55"
+    lh_heading = "1.22" if is_hi else "1.12"
+    lh_card = "1.7" if is_hi else "1.6"
+
+    return f"""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;500;700;800&family=Noto+Sans+Devanagari:wght@400;600;700&display=swap');
+
+:root {{
+{colors}
+  --lh-body: {lh_body};
+  --lh-heading: {lh_heading};
+  --lh-card: {lh_card};
+}}
+
+html, body, [class*="css"], .stApp, button, textarea, input {{
+  font-family:'Atkinson Hyperlegible Next','Noto Sans Devanagari',-apple-system,'Segoe UI',sans-serif !important;
+}}
+
+/* Base app container */
+.stApp, [data-testid="stAppViewContainer"] {{
+  background:var(--bg) !important;
+  color:var(--ink) !important;
+}}
+[data-testid="stHeader"], #MainMenu, footer, [data-testid="stToolbar"] {{ display:none !important; }}
+.block-container {{
+  max-width:1240px !important;
+  padding:1.25rem 1.5rem 3.5rem !important;
+  background:transparent !important;
+}}
+
+::selection {{
+  background:var(--brand-soft) !important;
+  color:var(--ink) !important;
+}}
+
+/* Top bar container */
+.st-key-topbar_container {{
+  padding-bottom:.85rem;
+  border-bottom:1px solid var(--line);
+  margin-bottom:.5rem;
+}}
+.brand {{
+  display:flex;
+  align-items:center;
+  gap:.55rem;
+  font-weight:800;
+  font-size:1.3rem;
+  color:var(--brand);
+  letter-spacing:-.01em;
+}}
+.sos-wrap {{
+  display:flex;
+  justify-content:flex-end;
+  align-items:center;
+}}
+.sos {{
+  display:inline-block;
+  font-weight:700;
+  font-size:.95rem;
+  color:var(--scam);
+  text-decoration:none;
+  border:2px solid var(--scam);
+  border-radius:999px;
+  padding:.35rem .9rem;
+  white-space:nowrap;
+  background:var(--surface);
+  text-align:center;
+}}
+.sos:hover {{ background:var(--scam-tint); }}
+
+/* Top bar widgets (Toggle & Radio) */
+.st-key-topbar_container [data-testid="stToggle"] {{
+  margin:0 !important;
+}}
+.st-key-topbar_container [data-testid="stToggle"] label p {{
+  font-size:.95rem !important;
+  font-weight:700 !important;
+  color:var(--ink) !important;
+  margin:0 !important;
+}}
+.st-key-topbar_container [data-testid="stRadio"] {{
+  margin:0 !important;
+}}
+.st-key-topbar_container [data-testid="stRadio"] > div {{
+  gap:.35rem !important;
+  flex-direction:row !important;
+}}
+.st-key-topbar_container [data-testid="stRadio"] div[role="radiogroup"] label {{
+  font-size:.95rem !important;
+  font-weight:700 !important;
+  color:var(--ink) !important;
+  cursor:pointer;
+  margin:0 !important;
+  padding:.2rem .45rem !important;
+  border-radius:6px;
+}}
+.st-key-topbar_container [data-testid="stRadio"] div[role="radiogroup"] label:has(input:checked) {{
+  background:var(--brand-soft);
+  color:var(--brand) !important;
+}}
+
+/* Keyboard focus visibility on all controls */
+button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible,
+summary:focus-visible, [tabindex]:focus-visible,
+[data-testid="stToggle"] label:focus-within,
+[data-testid="stRadio"] label:focus-within {{
+  outline:3px solid var(--brand) !important;
+  outline-offset:2px !important;
+  border-radius:6px !important;
+}}
+
+/* Intro */
+.intro {{ padding:1.4rem 0 1.25rem; }}
+.intro h1 {{
+  font-size:clamp(1.85rem,5.2vw,3rem);
+  line-height:var(--lh-heading);
+  font-weight:800;
+  letter-spacing:-.025em;
+  margin:0 0 .8rem;
+  color:var(--ink);
+  max-width:24ch;
+}}
+.intro p {{
+  font-size:1.15rem;
+  line-height:var(--lh-body);
+  color:var(--muted);
+  margin:0 0 .35rem;
+  max-width:54ch;
+}}
+.intro .hi {{ font-size:1.05rem; }}
+
+/* Input */
+[data-testid="stTextArea"] label p {{
+  font-size:1.1rem !important;
+  font-weight:700 !important;
+  color:var(--ink) !important;
+}}
+[data-testid="stTextArea"] textarea {{
+  font-size:1.125rem !important;
+  line-height:var(--lh-body) !important;
+  color:var(--ink) !important;
+  background:var(--surface) !important;
+  border:2px solid var(--textarea-border) !important;
+  border-radius:12px !important;
+  padding:1rem !important;
+}}
+[data-testid="stTextArea"] textarea:focus {{
+  border-color:var(--brand) !important;
+  box-shadow:0 0 0 4px rgba(59,130,246,.28) !important;
+}}
+[data-testid="stTextArea"] textarea::placeholder {{
+  color:var(--muted) !important;
+}}
+.privacy {{
+  font-size:.95rem;
+  color:var(--muted);
+  line-height:var(--lh-body);
+  margin:.35rem 0 1rem;
+}}
+
+/* Buttons */
+.stButton > button, [data-testid="stBaseButton-primary"], [data-testid="stBaseButton-secondary"] {{
+  min-height:3.25rem;
+  font-size:1.125rem !important;
+  font-weight:700 !important;
+  border-radius:12px !important;
+  width:100%;
+}}
+.stButton > button[kind="primary"], [data-testid="stBaseButton-primary"] {{
+  background:var(--brand) !important;
+  color:#fff !important;
+  border:2px solid var(--brand) !important;
+}}
+.stButton > button[kind="primary"]:hover:not(:disabled), [data-testid="stBaseButton-primary"]:hover:not(:disabled) {{
+  filter:brightness(1.12);
+}}
+.stButton > button[kind="primary"]:disabled, [data-testid="stBaseButton-primary"]:disabled {{
+  background:{'#334155' if is_dark else '#8E98BC'} !important;
+  border-color:{'#334155' if is_dark else '#8E98BC'} !important;
+  color:{'#64748B' if is_dark else '#FFFFFF'} !important;
+}}
+.stButton > button[kind="secondary"], [data-testid="stBaseButton-secondary"] {{
+  background:var(--surface) !important;
+  color:var(--ink) !important;
+  border:2px solid var(--btn-sec-border) !important;
+}}
+.stButton > button[kind="secondary"]:hover:not(:disabled), [data-testid="stBaseButton-secondary"]:hover:not(:disabled) {{
+  background:var(--brand-soft) !important;
+  border-color:var(--brand) !important;
+  color:var(--ink) !important;
+}}
+
+/* Underlined Clear Button */
+.st-key-clear button {{
+  min-height:2.75rem !important;
+  background:transparent !important;
+  border:2px solid transparent !important;
+  text-decoration:underline !important;
+  color:var(--muted) !important;
+}}
+.st-key-clear button:hover {{
+  color:var(--ink) !important;
+}}
+.st-key-clear button p {{
+  font-size:1.05rem !important;
+  color:inherit !important;
+}}
+
+/* Expanders */
+[data-testid="stExpander"] {{
+  background:var(--surface) !important;
+  border:1px solid var(--line) !important;
+  border-radius:12px;
+}}
+[data-testid="stExpander"] summary {{
+  font-size:1.05rem;
+  font-weight:700;
+  color:var(--ink) !important;
+}}
+[data-testid="stExpander"] summary p {{
+  font-size:1.05rem !important;
+  font-weight:700 !important;
+  color:var(--ink) !important;
+}}
+[data-testid="stExpander"] summary svg {{
+  fill:var(--ink) !important;
+  stroke:var(--ink) !important;
+  color:var(--ink) !important;
+}}
+[data-testid="stExpanderDetails"] {{
+  background:var(--surface) !important;
+  color:var(--ink) !important;
+}}
+
+/* Spinner */
+[data-testid="stSpinner"] {{
+  color:var(--ink) !important;
+}}
+
+/* Notices */
+.note {{
+  border-radius:12px;
+  padding:.9rem 1.1rem;
+  font-size:1.05rem;
+  line-height:var(--lh-body);
+  margin:1rem 0;
+  border:1px solid;
+}}
+.note b {{ display:block; margin-bottom:.15rem; }}
+.note-info {{
+  background:var(--note-info-bg);
+  border-color:var(--note-info-border);
+  color:var(--ink);
+}}
+.note-error {{
+  background:var(--note-err-bg);
+  border-color:var(--note-err-border);
+  color:var(--ink);
+}}
+
+/* Verdict */
+.verdict {{
+  border-radius:16px;
+  padding:1.5rem 1.4rem 1.4rem;
+  margin:1.5rem 0 1rem;
+  border:1px solid var(--edge);
+  background:var(--tint);
+  color:var(--ink);
+}}
+.v-scam {{ --tone:var(--scam); --tint:var(--scam-tint); --edge:var(--scam-edge); }}
+.v-warn {{ --tone:var(--warn); --tint:var(--warn-tint); --edge:var(--warn-edge); }}
+.v-safe {{ --tone:var(--safe); --tint:var(--safe-tint); --edge:var(--safe-edge); }}
+.stamp {{
+  display:inline-flex;
+  align-items:center;
+  gap:.65rem;
+  color:var(--tone);
+  background:var(--stamp-bg);
+  border:5px double var(--tone);
+  border-radius:10px;
+  padding:.5rem 1.1rem .5rem .8rem;
+  font-weight:800;
+  font-size:clamp(1.45rem,5.2vw,2.1rem);
+  line-height:var(--lh-heading);
+  letter-spacing:-.01em;
+  transform:rotate(-1.5deg);
+  animation:thud .38s cubic-bezier(.2,1.5,.4,1) both;
+}}
+@keyframes thud {{
+  from {{ transform:rotate(-1.5deg) scale(1.28); opacity:0; }}
+  to {{ transform:rotate(-1.5deg) scale(1); opacity:1; }}
+}}
+@media (prefers-reduced-motion:reduce) {{ .stamp {{ animation:none; }} }}
+
+.v-lead {{
+  font-size:1.2rem;
+  font-weight:700;
+  margin:1.1rem 0 .2rem;
+  color:var(--tone);
+  line-height:var(--lh-body);
+}}
+.v-type {{
+  font-size:1.05rem;
+  color:var(--muted);
+  margin:0 0 .9rem;
+  line-height:var(--lh-body);
+}}
+.v-explain {{
+  font-size:1.2rem;
+  line-height:var(--lh-card);
+  margin:0;
+  max-width:62ch;
+  color:var(--ink);
+}}
+.v-meta {{
+  margin-top:1rem;
+  padding-top:.8rem;
+  border-top:1px solid var(--edge);
+  font-size:1rem;
+  color:var(--muted);
+}}
+
+.backend-lang-note {{
+  font-size:.95rem;
+  color:var(--muted);
+  margin:1.1rem 0 .2rem;
+  font-style:italic;
+  line-height:var(--lh-body);
+}}
+
+.sec {{ margin:1.6rem 0 0; }}
+.sec h2 {{
+  font-size:1.3rem;
+  font-weight:800;
+  margin:0 0 .7rem;
+  color:var(--ink);
+  letter-spacing:-.01em;
+  line-height:var(--lh-heading);
+}}
+.flags, .steps {{ margin:0; padding:0; list-style:none; }}
+.flags li {{
+  position:relative;
+  padding:.65rem 0 .65rem 1.9rem;
+  border-bottom:1px solid var(--line);
+  font-size:1.1rem;
+  line-height:var(--lh-body);
+  overflow-wrap:anywhere;
+  color:var(--ink);
+}}
+.flags li::before {{
+  content:"";
+  position:absolute;
+  left:.2rem;
+  top:1.05rem;
+  width:.8rem;
+  height:.8rem;
+  background:var(--mark,var(--scam));
+  clip-path:polygon(0 0,100% 0,100% 100%,50% 75%,0 100%);
+}}
+.flags.f-safe li::before {{ --mark:var(--safe); clip-path:circle(50%); }}
+.flags.f-warn li::before {{ --mark:var(--warn); }}
+
+.steps {{ counter-reset:s; }}
+.steps li {{
+  counter-increment:s;
+  display:flex;
+  gap:.85rem;
+  align-items:flex-start;
+  background:var(--surface);
+  border:1px solid var(--line);
+  border-radius:12px;
+  padding:.85rem 1rem;
+  margin-bottom:.6rem;
+  font-size:1.1rem;
+  line-height:var(--lh-body);
+  overflow-wrap:anywhere;
+  color:var(--ink);
+}}
+.steps li::before {{
+  content:counter(s);
+  flex:none;
+  width:1.8rem;
+  height:1.8rem;
+  border-radius:50%;
+  background:var(--brand);
+  color:#fff;
+  font-weight:800;
+  display:grid;
+  place-items:center;
+  font-size:1rem;
+}}
+
+.detail {{ font-size:1.02rem; line-height:var(--lh-body); color:var(--ink); }}
+.detail p {{ margin:.2rem 0 .7rem; color:var(--ink); }}
+.ref {{ border-left:4px solid var(--line); padding:.2rem 0 .2rem .9rem; margin:.9rem 0; }}
+.ref q {{
+  display:block;
+  font-size:.98rem;
+  color:var(--muted);
+  margin:.25rem 0;
+  overflow-wrap:anywhere;
+  quotes:"\\201C" "\\201D";
+}}
+.ref small {{ color:var(--muted); font-size:.88rem; }}
+
+/* Right rail */
+.rail {{
+  background:var(--surface);
+  border:1px solid var(--line);
+  border-radius:16px;
+  padding:1.4rem 1.3rem;
+  margin-top:1.6rem;
+  color:var(--ink);
+}}
+.rail h2 {{
+  font-size:1.2rem;
+  font-weight:800;
+  margin:0 0 .4rem;
+  letter-spacing:-.01em;
+  color:var(--ink);
+  line-height:var(--lh-heading);
+}}
+.rail h3 {{
+  font-size:1.05rem;
+  font-weight:800;
+  margin:1.3rem 0 .3rem;
+  padding-top:1.1rem;
+  border-top:1px solid var(--line);
+  color:var(--ink);
+  line-height:var(--lh-heading);
+}}
+.rail p {{
+  font-size:1rem;
+  line-height:var(--lh-body);
+  color:var(--muted);
+  margin:.2rem 0 .5rem;
+}}
+.rail ul {{ list-style:none; padding:0; margin:.3rem 0 0; }}
+.rail li {{
+  padding:.45rem 0;
+  font-size:1rem;
+  line-height:var(--lh-body);
+  overflow-wrap:anywhere;
+  color:var(--ink);
+}}
+.rail a {{
+  color:var(--brand-link);
+  font-weight:700;
+}}
+.rail a.call {{
+  display:block;
+  text-align:center;
+  background:#DC2626;
+  color:#fff !important;
+  font-size:1.35rem;
+  font-weight:800;
+  border-radius:12px;
+  padding:.75rem;
+  text-decoration:none;
+  margin:.7rem 0 .8rem;
+}}
+.rail a.call:hover {{
+  filter:brightness(1.1);
+}}
+
+/* Phone call bar */
+.callbar {{ display:none; }}
+
+@media (max-width:760px) {{
+  .sos, .sos-wrap {{ display:none !important; }}
+  .st-key-topbar_container [data-testid="column"]:has(.sos-wrap) {{ display:none !important; }}
+
+  /* Top bar layout on phone: logo on row 1, toggles in a row on row 2 */
+  .st-key-topbar_container > [data-testid="stHorizontalBlock"] {{
+    flex-direction:column !important;
+    gap:.6rem !important;
+  }}
+  .st-key-topbar_container > [data-testid="stHorizontalBlock"] > [data-testid="column"] {{
+    width:100% !important;
+    flex:1 1 100% !important;
+  }}
+  .st-key-topbar_container [data-testid="column"] > [data-testid="stHorizontalBlock"] {{
+    display:flex !important;
+    flex-direction:row !important;
+    flex-wrap:nowrap !important;
+    align-items:center !important;
+    justify-content:flex-start !important;
+    gap:.75rem !important;
+  }}
+  .st-key-topbar_container [data-testid="column"] > [data-testid="stHorizontalBlock"] > [data-testid="column"] {{
+    width:auto !important;
+    flex:0 0 auto !important;
+  }}
+
+  .block-container {{
+    padding:1rem 1rem calc(5.5rem + env(safe-area-inset-bottom, 0px)) !important;
+  }}
+
+  .callbar {{
+    display:flex;
+    position:fixed;
+    left:0;
+    right:0;
+    bottom:0;
+    z-index:999;
+    justify-content:center;
+    align-items:center;
+    gap:.6rem;
+    background:#DC2626;
+    color:#fff !important;
+    font-weight:800;
+    font-size:1.15rem;
+    text-decoration:none;
+    padding:.9rem 1rem calc(.9rem + env(safe-area-inset-bottom, 0px));
+    box-shadow:0 -2px 10px rgba(0,0,0,0.25);
+  }}
+}}
+</style>
+"""
 
 
-# ==============================================================================
-# 6. API KEY RESOLUTION (STREAMLIT SECRETS -> ENVIRONMENT / .ENV)
-# ==============================================================================
+@st.cache_resource
+def get_pipeline() -> ScamShieldPipeline:
+    return ScamShieldPipeline()
+
 
 def get_gemini_api_key() -> Optional[str]:
-    """
-    Safely retrieves the Gemini API key without logging or exposing it.
-    Order of precedence:
-    1. Streamlit server-side secrets: st.secrets["GEMINI_API_KEY"] (for cloud deployment)
-    2. Environment variable: os.getenv("GEMINI_API_KEY") (including values from .env for local dev)
-    """
-    # 1. Streamlit server-side secrets (for cloud deployment)
+    """Server-side key lookup: Streamlit secrets first, then environment / .env."""
     try:
         if "GEMINI_API_KEY" in st.secrets:
-            sec_key = st.secrets["GEMINI_API_KEY"]
-            if sec_key and str(sec_key).strip() and str(sec_key).strip() != "your_gemini_api_key_here":
-                return str(sec_key).strip()
-    except Exception:
-        # Gracefully handle missing secrets.toml or Streamlit secrets errors without crashing
-        pass
-
-    # 2. Environment variable / local .env file (for local development)
-    try:
-        env_key = os.getenv("GEMINI_API_KEY")
-        if not env_key or env_key.strip() == "your_gemini_api_key_here":
-            load_dotenv()
-            env_key = os.getenv("GEMINI_API_KEY")
-        if env_key and env_key.strip() and env_key.strip() != "your_gemini_api_key_here":
-            return env_key.strip()
+            key = str(st.secrets["GEMINI_API_KEY"]).strip()
+            if key and key != "your_gemini_api_key_here":
+                return key
     except Exception:
         pass
-
+    key = (os.getenv("GEMINI_API_KEY") or "").strip()
+    if key and key != "your_gemini_api_key_here":
+        return key
     return None
 
 
-# ==============================================================================
-# 7. MAIN UI APPLICATION
-# ==============================================================================
+# ---- state & callbacks -----------------------------------------------------
+
+def _init_state():
+    s = st.session_state
+
+    # 1. Language state
+    qp_lang = st.query_params.get("lang")
+    if qp_lang in ("en", "hi") and "lang" in s and s["lang"] != qp_lang:
+        s["lang"] = qp_lang
+        s["lang_radio"] = "हिन्दी" if qp_lang == "hi" else "English"
+        s.result, s.error, s.empty, s.pending = None, False, False, False
+    elif "lang" not in s:
+        s["lang"] = "hi" if qp_lang == "hi" else "en"
+
+    if "lang_radio" not in s:
+        s["lang_radio"] = "हिन्दी" if s["lang"] == "hi" else "English"
+    st.query_params["lang"] = s["lang"]
+
+    # 2. Theme state
+    qp_theme = st.query_params.get("theme")
+    if qp_theme in ("light", "dark") and "theme" in s and s["theme"] != qp_theme:
+        s["theme"] = qp_theme
+        s["theme_toggle"] = (qp_theme == "dark")
+    elif "theme" not in s:
+        s["theme"] = "dark" if qp_theme == "dark" else "light"
+
+    if "theme_toggle" not in s:
+        s["theme_toggle"] = (s["theme"] == "dark")
+    st.query_params["theme"] = s["theme"]
+
+    # Message and execution states
+    s.setdefault("message_input", "")
+    s.setdefault("result", None)
+    s.setdefault("error", False)
+    s.setdefault("empty", False)
+    s.setdefault("pending", False)
+
+
+def on_lang_change():
+    s = st.session_state
+    new_choice = s.get("lang_radio", "English")
+    new_lang = "hi" if new_choice == "हिन्दी" else "en"
+    if s.get("lang") != new_lang:
+        s["lang"] = new_lang
+        st.query_params["lang"] = new_lang
+        # Clear shown result when language changes so an English result is never shown under Hindi labels
+        s.result, s.error, s.empty, s.pending = None, False, False, False
+
+
+def on_theme_change():
+    s = st.session_state
+    is_dark = s.get("theme_toggle", False)
+    new_theme = "dark" if is_dark else "light"
+    s["theme"] = new_theme
+    st.query_params["theme"] = new_theme
+
+
+def on_check():
+    s = st.session_state
+    s.result, s.error = None, False
+    if not s.message_input.strip():
+        s.empty, s.pending = True, False
+    else:
+        s.empty, s.pending = False, True
+
+
+def on_clear():
+    s = st.session_state
+    s.message_input = ""
+    s.result, s.error, s.empty, s.pending = None, False, False, False
+
+
+def on_sample(name: str):
+    s = st.session_state
+    s.message_input = SAMPLE_MESSAGES[name]
+    s.result, s.error, s.empty, s.pending = None, False, False, False
+
+
+# ---- rendering -------------------------------------------------------------
+
+def clean_list(items) -> list:
+    return [str(i).strip() for i in (items or []) if str(i).strip()]
+
+
+def status_line(out: PipelineOutput) -> str:
+    """Plain-language description of how this result was produced, from real backend flags."""
+    if out.is_ai and out.is_dataset_informed:
+        return t("status_ai_rules_refs")
+    if out.is_ai:
+        return t("status_ai_rules")
+    if out.is_dataset_informed:
+        return t("status_rules_refs")
+    return t("status_rules_only")
+
+
+def render_result(out: PipelineOutput):
+    key = str(out.verdict).upper().strip()
+    if key not in ("SCAM", "SUSPICIOUS", "SAFE"):
+        key = "SUSPICIOUS"
+
+    verdict_info = {
+        "SCAM": {
+            "cls": "v-scam",
+            "title": t("verdict_scam_title"),
+            "lead": t("verdict_scam_lead"),
+            "flags": t("verdict_scam_flags"),
+        },
+        "SUSPICIOUS": {
+            "cls": "v-warn",
+            "title": t("verdict_warn_title"),
+            "lead": t("verdict_warn_lead"),
+            "flags": t("verdict_warn_flags"),
+        },
+        "SAFE": {
+            "cls": "v-safe",
+            "title": t("verdict_safe_title"),
+            "lead": t("verdict_safe_lead"),
+            "flags": t("verdict_safe_flags"),
+        },
+    }[key]
+
+    conf_map = {
+        "HIGH": t("confidence_high"),
+        "MEDIUM": t("confidence_medium"),
+        "LOW": t("confidence_low"),
+    }
+    conf = conf_map.get(str(out.confidence).upper().strip())
+    meta = f"{esc(t('confidence_label'))}: <b>{esc(conf)}</b>" if conf else ""
+
+    st.markdown(
+        f'<section class="verdict {verdict_info["cls"]}" role="status" aria-live="polite">'
+        f'<div class="stamp">{ICONS[key]}<span>{esc(verdict_info["title"])}</span></div>'
+        f'<p class="v-lead">{esc(verdict_info["lead"])}</p>'
+        f'<p class="v-type">{esc(str(out.scam_type))}</p>'
+        f'<p class="v-explain">{esc(str(out.explanation))}</p>'
+        + (f'<div class="v-meta">{meta}</div>' if meta else "")
+        + "</section>",
+        unsafe_allow_html=True,
+    )
+
+    if not out.is_ai:
+        reason = f" ({esc(str(out.fallback_reason))})" if out.fallback_reason else ""
+        st.markdown(
+            f'<div class="note note-info"><b>{esc(t("backup_used_title"))}</b>{esc(status_line(out))}{reason}</div>',
+            unsafe_allow_html=True,
+        )
+
+    # In Hindi mode, if backend text is English (e.g. from fallback or non-AI), show the notice
+    current_lang = st.session_state.get("lang", "en")
+    if current_lang == "hi" and not out.is_ai:
+        st.markdown(
+            f'<p class="backend-lang-note">{esc(t("backend_english_note"))}</p>',
+            unsafe_allow_html=True,
+        )
+
+    flags = clean_list(out.red_flags)
+    if flags:
+        fcls = {"SAFE": "f-safe", "SUSPICIOUS": "f-warn"}.get(key, "")
+        items = "".join(f"<li>{esc(f)}</li>" for f in flags)
+        st.markdown(
+            f'<div class="sec"><h2>{esc(verdict_info["flags"])}</h2><ul class="flags {fcls}">{items}</ul></div>',
+            unsafe_allow_html=True,
+        )
+
+    actions = clean_list(out.recommended_actions)
+    if actions:
+        items = "".join(f"<li><span>{esc(a)}</span></li>" for a in actions)
+        st.markdown(
+            f'<div class="sec"><h2>{esc(t("what_to_do_now"))}</h2><ol class="steps">{items}</ol></div>',
+            unsafe_allow_html=True,
+        )
+
+    st.markdown('<div class="sec"></div>', unsafe_allow_html=True)
+
+    with st.expander(t("how_checked_expander")):
+        st.markdown(f'<div class="detail"><p>{esc(status_line(out))}</p></div>', unsafe_allow_html=True)
+        findings = out.rule_results.findings if out.rule_results else []
+        if findings:
+            rows = ""
+            for f in findings:
+                details = ", ".join(esc(str(d)) for d in f.get("details", []))
+                rows += f'<li><b>{esc(str(f.get("category", "")))}</b>: {details}</li>'
+            st.markdown(
+                f'<div class="detail"><p>{esc(t("patterns_found"))}</p><ul>{rows}</ul></div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(
+                f'<div class="detail"><p>{esc(t("no_patterns_found"))}</p></div>',
+                unsafe_allow_html=True,
+            )
+
+    refs = out.dataset_matches.matched_references if out.dataset_matches else []
+    if SHOW_REFERENCE_EXAMPLES and refs:
+        with st.expander(t("refs_expander")):
+            st.markdown(f'<div class="detail"><p>{esc(t("refs_note"))}</p></div>', unsafe_allow_html=True)
+            for r in refs:
+                origin = t("ref_synthetic") if r.is_synthetic else t("ref_real")
+                label = esc(str(r.assigned_label).title())
+                cat = esc(str(r.curated_category).replace("_", " ").capitalize())
+                st.markdown(
+                    f'<div class="detail ref"><b>{label}</b>, {cat}<q>{esc(str(r.message))}</q>'
+                    f'<small>{origin}</small></div>',
+                    unsafe_allow_html=True,
+                )
+
+
+def render_rail() -> str:
+    return (
+        f'<aside class="rail"><h2>{esc(t("rail_heading"))}</h2>'
+        f'<p>{esc(t("rail_p1"))}</p>'
+        f'<a class="call" href="tel:1930">{esc(t("rail_call"))}</a>'
+        '<ul>'
+        f'<li>{esc(t("rail_cybercrime"))}<a href="https://cybercrime.gov.in" target="_blank" rel="noopener noreferrer">cybercrime.gov.in</a></li>'
+        f'<li>{esc(t("rail_sanchar"))}<a href="https://sancharsaathi.gov.in" target="_blank" rel="noopener noreferrer">sancharsaathi.gov.in</a></li>'
+        f'<li>{esc(t("rail_rbi"))}<a href="tel:14448">14448</a></li>'
+        '</ul>'
+        f'<h3>{esc(t("rail_privacy_heading"))}</h3>'
+        f'<p>{esc(t("rail_privacy_body"))}</p>'
+        f'<h3>{esc(t("rail_about_heading"))}</h3>'
+        f'<p>{esc(t("rail_about_p1"))}</p>'
+        f'<p>{esc(t("rail_about_p2"))}</p>'
+        '</aside>'
+    )
+
 
 def render_app():
-    # Page Configuration
+    _init_state()
+    s = st.session_state
+
     st.set_page_config(
-        page_title="Scam Shield | Protect Your Family From Scams",
+        page_title=t("page_title"),
         page_icon="🛡️",
         layout="wide",
-        initial_sidebar_state="collapsed"
+        initial_sidebar_state="collapsed",
     )
+    st.markdown(get_css(s.theme, s.lang), unsafe_allow_html=True)
 
-    # Custom Styling: Deep Navy/Emerald Indian Cyber Safety Theme
-    custom_css = """
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Noto+Sans+Devanagari:wght@400;600;700&display=swap');
-
-        html, body, [class*="css"] {
-            font-family: 'Plus Jakarta Sans', 'Noto Sans Devanagari', -apple-system, BlinkMacSystemFont, sans-serif;
-        }
-
-        .stApp {
-            background: radial-gradient(circle at 50% 0%, #0d1e38 0%, #081226 70%, #050b18 100%);
-            color: #f1f5f9;
-        }
-
-        .hero-container {
-            text-align: center;
-            padding: 1.5rem 1rem 1rem 1rem;
-            margin-bottom: 1rem;
-        }
-        .hero-title {
-            font-size: 2.4rem;
-            font-weight: 800;
-            background: linear-gradient(135deg, #38bdf8 0%, #34d399 50%, #10b981 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            margin-bottom: 0.25rem;
-            letter-spacing: -0.02em;
-        }
-        .hero-subtitle {
-            font-size: 1.15rem;
-            color: #94a3b8;
-            max-width: 700px;
-            margin: 0 auto;
-            line-height: 1.5;
-        }
-
-        .helpline-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            background: rgba(239, 68, 68, 0.15);
-            border: 1px solid rgba(239, 68, 68, 0.4);
-            color: #fca5a5;
-            padding: 6px 16px;
-            border-radius: 9999px;
-            font-size: 0.95rem;
-            font-weight: 700;
-            margin-top: 0.75rem;
-        }
-
-        .dataset-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            background: rgba(16, 185, 129, 0.15);
-            border: 1px solid rgba(16, 185, 129, 0.4);
-            color: #6ee7b7;
-            padding: 5px 16px;
-            border-radius: 9999px;
-            font-size: 0.85rem;
-            font-weight: 600;
-            margin-top: 0.5rem;
-        }
-
-        .dataset-badge-standalone {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            background: rgba(245, 158, 11, 0.15);
-            border: 1px solid rgba(245, 158, 11, 0.4);
-            color: #fcd34d;
-            padding: 5px 16px;
-            border-radius: 9999px;
-            font-size: 0.85rem;
-            font-weight: 600;
-            margin-top: 0.5rem;
-        }
-
-        .verdict-card {
-            border-radius: 18px;
-            padding: 28px;
-            margin: 1.5rem 0;
-            box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
-            border: 2px solid;
-        }
-        .verdict-scam {
-            background: linear-gradient(145deg, rgba(127, 29, 29, 0.85) 0%, rgba(69, 10, 10, 0.95) 100%);
-            border-color: #ef4444;
-            color: #ffffff;
-        }
-        .verdict-suspicious {
-            background: linear-gradient(145deg, rgba(146, 64, 14, 0.85) 0%, rgba(67, 20, 7, 0.95) 100%);
-            border-color: #f59e0b;
-            color: #ffffff;
-        }
-        .verdict-safe {
-            background: linear-gradient(145deg, rgba(6, 78, 59, 0.85) 0%, rgba(2, 44, 34, 0.95) 100%);
-            border-color: #10b981;
-            color: #ffffff;
-        }
-
-        .verdict-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: 1rem;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.15);
-            padding-bottom: 0.75rem;
-        }
-        .verdict-title {
-            font-size: 2.2rem;
-            font-weight: 800;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            margin: 0;
-        }
-        .verdict-type {
-            font-size: 1.25rem;
-            font-weight: 600;
-            color: #e2e8f0;
-            margin-bottom: 1rem;
-        }
-        .verdict-explanation {
-            font-size: 1.25rem;
-            line-height: 1.6;
-            font-weight: 500;
-            padding: 14px 18px;
-            background: rgba(0, 0, 0, 0.25);
-            border-radius: 12px;
-            margin-bottom: 1.25rem;
-        }
-
-        .result-section-title {
-            font-size: 1.1rem;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            margin-top: 1.25rem;
-            margin-bottom: 0.75rem;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        .action-step-item {
-            background: rgba(255, 255, 255, 0.08);
-            border-left: 4px solid #38bdf8;
-            padding: 12px 16px;
-            border-radius: 0 10px 10px 0;
-            margin-bottom: 8px;
-            font-size: 1.05rem;
-            font-weight: 500;
-            line-height: 1.5;
-            word-break: break-word;
-        }
-        .red-flag-item {
-            background: rgba(239, 68, 68, 0.12);
-            border-left: 4px solid #ef4444;
-            padding: 12px 16px;
-            border-radius: 0 10px 10px 0;
-            margin-bottom: 8px;
-            font-size: 1.05rem;
-            font-weight: 500;
-            line-height: 1.5;
-            word-break: break-word;
-        }
-
-        .disclaimer-box {
-            background: rgba(15, 23, 42, 0.85);
-            border: 1px solid rgba(148, 163, 184, 0.25);
-            border-radius: 12px;
-            padding: 14px 18px;
-            font-size: 0.95rem;
-            color: #94a3b8;
-            line-height: 1.5;
-            margin-top: 1.5rem;
-        }
-
-        .stTextArea textarea {
-            font-size: 1.15rem !important;
-            line-height: 1.6 !important;
-            background-color: #0b1a30 !important;
-            color: #f8fafc !important;
-            border: 2px solid #243b5a !important;
-            border-radius: 14px !important;
-            padding: 16px !important;
-        }
-        .stTextArea textarea:focus {
-            border-color: #38bdf8 !important;
-            box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.25) !important;
-        }
-
-        .stButton button {
-            background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
-            color: #ffffff !important;
-            font-size: 1.25rem !important;
-            font-weight: 700 !important;
-            padding: 14px 32px !important;
-            border-radius: 12px !important;
-            border: none !important;
-            width: 100% !important;
-            box-shadow: 0 4px 14px rgba(16, 185, 129, 0.4) !important;
-            transition: all 0.2s ease-in-out !important;
-        }
-        .stButton button:hover {
-            background: linear-gradient(135deg, #34d399 0%, #10b981 100%) !important;
-            transform: translateY(-2px);
-            box-shadow: 0 8px 24px rgba(16, 185, 129, 0.5) !important;
-        }
-
-        #MainMenu {visibility: hidden;}
-        footer {visibility: hidden;}
-    </style>
-    """
-    st.markdown(custom_css, unsafe_allow_html=True)
-
-    # Session state initialization for message input
-    if "message_input" not in st.session_state:
-        st.session_state["message_input"] = ""
-
-    # Sidebar: About Scam Shield, Helplines & Privacy Notice
-    with st.sidebar:
-        st.header("🛡️ About Scam Shield")
-        st.markdown(
-            "Scam Shield is a free cyber safety assistant designed to help families in India "
-            "identify potential digital fraud, malicious links, and scam messages."
-        )
-
-        st.markdown("---")
-        st.markdown("### 🇮🇳 Emergency Indian Helplines")
-        st.markdown("- **National Cybercrime**: Dial **1930**")
-        st.markdown("- **Cybercrime Portal**: [cybercrime.gov.in](https://cybercrime.gov.in)")
-        st.markdown("- **Chakshu Fraud Reporting**: [sancharsaathi.gov.in](https://sancharsaathi.gov.in)")
-        st.markdown("- **Banking Ombudsman**: Dial **14448**")
-        
-        st.markdown("---")
-        st.markdown("### 🔒 Privacy Notice")
-        st.caption(
-            "Scam Shield processes submitted text in real time to assess fraud risk. "
-            "When AI analysis is active, text is evaluated using Google Gemini. "
-            "For your security, never paste passwords, MPINs, OTPs, or sensitive banking details."
-        )
-
-    # Initialize cached detection pipeline
-    pipeline = get_pipeline()
-
-    badge_class = "dataset-badge" if pipeline.is_dataset_available else "dataset-badge-standalone"
-    badge_text = (
-        f"🧠 Dataset Intelligence: {pipeline.train_records_count:,} Verified Reference Cases Active"
-        if pipeline.is_dataset_available
-        else "⚙️ Standalone Heuristic Engine Active (No External Dataset)"
-    )
-
-    # Hero Header (constructed without multiline indentation to prevent Markdown code block misinterpretation)
-    hero_html = (
-        '<div class="hero-container">'
-        '<div class="hero-title">🛡️ Scam Shield (स्कैम शील्ड)</div>'
-        '<div class="hero-subtitle">'
-        'Instant, elder-friendly fraud protection for WhatsApp, SMS, and email messages in India. '
-        'Simple answers. Zero confusing tech jargon.'
-        '</div>'
-        '<div><span class="helpline-badge">🚨 National Cyber Helpline: Dial 1930 (Free & 24x7)</span></div>'
-        f'<div><span class="{badge_class}">{badge_text}</span></div>'
-        '</div>'
-    )
-    st.markdown(hero_html, unsafe_allow_html=True)
-
-    # Instructions & Quick Samples Section
-    st.markdown("#### 💡 Quick Test: Click a sample message or paste your own below")
-
-    col1, col2, col3, col4, col5 = st.columns(5)
-    with col1:
-        if st.button("⚡ Electricity Scam", use_container_width=True):
-            st.session_state["message_input"] = SAMPLE_MESSAGES["⚡ Electricity Disconnection"]
-    with col2:
-        if st.button("🏦 Bank KYC APK", use_container_width=True):
-            st.session_state["message_input"] = SAMPLE_MESSAGES["🏦 SBI / YONO KYC Expiry APK"]
-    with col3:
-        if st.button("🎁 ₹25L KBC Lottery", use_container_width=True):
-            st.session_state["message_input"] = SAMPLE_MESSAGES["🎁 WhatsApp ₹25 Lakh KBC Lottery"]
-    with col4:
-        if st.button("👮 Digital Arrest", use_container_width=True):
-            st.session_state["message_input"] = SAMPLE_MESSAGES["👮 Digital Arrest / Courier Threat"]
-    with col5:
-        if st.button("✅ Safe Bank SMS", use_container_width=True):
-            st.session_state["message_input"] = SAMPLE_MESSAGES["✅ Legitimate Bank Transaction"]
-
-    # Main Message Input
-    user_message = st.text_area(
-        label="Paste suspicious message here (supports English, हिंदी, and Hinglish):",
-        value=st.session_state["message_input"],
-        height=160,
-        placeholder="Example: Dear customer your electricity bill is due tonight. Call 9876543210 to avoid power cut...",
-        help="You can paste SMS, WhatsApp forwards, suspicious emails, or offer messages."
-    )
-
-    # Privacy Callout
-    st.caption(
-        "🔒 **Privacy Notice**: Messages are analyzed in real time. "
-        "When AI analysis is active, message content is evaluated using Google Gemini. "
-        "Never submit sensitive personal credentials like bank passwords, MPINs, or OTPs."
-    )
-
-    # Analyze Button
-    analyze_clicked = st.button("🔍 Analyse Message (संदेश की जांच करें)", type="primary", use_container_width=True)
-
-    if analyze_clicked:
-        cleaned_text = user_message.strip()
-        
-        if not cleaned_text:
-            st.warning("⚠️ Please paste or type a message first to analyze.")
-        else:
-            api_key = get_gemini_api_key()
-
-            # Execute unified detection pipeline (Rules -> Dataset Matching -> Gemini -> Decision)
-            with st.spinner("Analyzing message safety with Scam Shield intelligence..."):
-                output: PipelineOutput = pipeline.analyze(cleaned_text, api_key=api_key)
-
-            # User-friendly notice when heuristic fallback was used
-            if not output.is_ai:
-                fallback_title = output.fallback_reason or "Offline Mode"
-                st.info(
-                    f"ℹ️ **Notice**: AI analysis is currently running in local intelligence mode ({fallback_title}). "
-                    "Scam Shield is using its built-in rule heuristics and curated dataset reference patterns."
-                )
-
-            # ==============================================================================
-            # Result Card Presentation
-            # ==============================================================================
-            verdict = output.verdict.upper()
-            scam_type = output.scam_type
-            explanation = output.explanation
-            red_flags = output.red_flags
-            recommended_actions = output.recommended_actions
-            confidence = output.confidence
-            is_ai = output.is_ai
-
-            # Visual styling depending on verdict and mode
-            if verdict == "SCAM":
-                verdict_class = "verdict-scam"
-                verdict_icon = "🚨"
-                verdict_badge = "HIGH DANGER - SCAM DETECTED"
-            elif verdict == "SAFE":
-                verdict_class = "verdict-safe"
-                verdict_icon = "🛡️"
-                verdict_badge = "NO MAJOR WARNING SIGNS FOUND"
-            else: # SUSPICIOUS
-                verdict_class = "verdict-suspicious"
-                verdict_icon = "⚠️"
-                verdict_badge = "SUSPICIOUS - PROCEED WITH CAUTION"
-
-            if is_ai:
-                mode_label = "🤖 AI Assisted (Dataset-Informed)" if output.is_dataset_informed else "🤖 AI Assisted"
-            else:
-                mode_label = "⚙️ Dataset-Informed Heuristics" if output.is_dataset_informed else "⚙️ Rule-Based Heuristics (Offline)"
-
-            # Sanitize all dynamic content to prevent HTML injection and layout breaks
-            safe_verdict_badge = html.escape(str(verdict_badge))
-            safe_confidence = html.escape(str(confidence))
-            safe_mode_label = html.escape(str(mode_label))
-            safe_scam_type = html.escape(str(scam_type))
-            safe_explanation = html.escape(str(explanation))
-
-            # Build Warning Signs / Red Flags items
-            if red_flags:
-                valid_flags = [str(f).strip() for f in red_flags if str(f).strip()]
-            else:
-                valid_flags = []
-
-            if valid_flags:
-                flags_html = "".join(
-                    f'<div class="red-flag-item">🚩 {html.escape(flag)}</div>'
-                    for flag in valid_flags
-                )
-            else:
-                flags_html = '<div class="red-flag-item" style="border-left-color: #94a3b8; background: rgba(148, 163, 184, 0.1);">No specific warning signs identified.</div>'
-
-            # Build Practical Next Steps items
-            if recommended_actions:
-                valid_actions = [str(a).strip() for a in recommended_actions if str(a).strip()]
-            else:
-                valid_actions = []
-
-            if valid_actions:
-                actions_html = "".join(
-                    f'<div class="action-step-item">✅ {html.escape(act)}</div>'
-                    for act in valid_actions
-                )
-            else:
-                actions_html = '<div class="action-step-item" style="border-left-color: #94a3b8; background: rgba(148, 163, 184, 0.1);">No immediate action required. Stay vigilant.</div>'
-
-            # Construct verdict card HTML
-            card_html = (
-                f'<div class="verdict-card {verdict_class}">'
-                f'<div class="verdict-header">'
-                f'<div class="verdict-title"><span>{verdict_icon}</span> <span>{safe_verdict_badge}</span></div>'
-                f'<div style="font-weight: 700; opacity: 0.9;">Confidence: {safe_confidence} | Mode: {safe_mode_label}</div>'
-                f'</div>'
-                f'<div class="verdict-type">🏷️ Category: <strong>{safe_scam_type}</strong></div>'
-                f'<div class="verdict-explanation"><strong>What this means:</strong> {safe_explanation}</div>'
-                f'<div class="result-section-title">⚠️ Warning Signs Identified:</div>'
-                f'{flags_html}'
-                f'<div class="result-section-title">🛡️ Practical Next Steps For You:</div>'
-                f'{actions_html}'
-                f'</div>'
-            )
-            st.markdown(card_html, unsafe_allow_html=True)
-
-            # Explicit Disclaimers (Required by safety principles)
-            if verdict == "SAFE":
-                st.markdown(
-                    '<div class="disclaimer-box">'
-                    '<strong>🛡️ IMPORTANT SAFETY NOTICE FOR SAFE RESULTS:</strong><br>'
-                    'A \'SAFE\' verdict explicitly means that no known major warning signs or threat patterns were '
-                    'identified in the text you supplied. This is <strong>NOT</strong> an absolute guarantee that the '
-                    'sender is legitimate. Always verify independently and <strong>NEVER</strong> share your bank '
-                    'OTP, PIN, or password with anyone.'
-                    '</div>',
-                    unsafe_allow_html=True
-                )
-
+    # Top Bar: Brand on Left, Theme Toggle + Language Toggle + SOS button on Right
+    with st.container(key="topbar_container"):
+        top_left, top_right = st.columns([1, 1], vertical_alignment="center")
+        with top_left:
             st.markdown(
-                '<div class="disclaimer-box">'
-                '<strong>⚖️ Independent Safety Tool:</strong> Scam Shield is an educational and fraud-prevention aid. '
-                'This result is an automated risk assessment and has <strong>NOT</strong> been verified or endorsed by '
-                'any bank, police authority, or government department.'
-                '</div>',
-                unsafe_allow_html=True
+                f'<div class="brand">{SHIELD_LOGO}<span>{esc(t("brand_name"))}</span></div>',
+                unsafe_allow_html=True,
             )
-
-            # ==============================================================================
-            # Dataset Reference Intelligence (Train Partition Matches)
-            # ==============================================================================
-            if output.dataset_matches and output.dataset_matches.matched_references:
-                with st.expander("📚 See Dataset Reference Matches (डेटासेट संदर्भ मामले)"):
-                    st.markdown(
-                        "Scam Shield retrieved similar verified reference patterns from its curated Indian scam dataset (Train Partition) to evaluate this message:"
-                    )
-                    for i, ref in enumerate(output.dataset_matches.matched_references, 1):
-                        synth_badge = "🤖 Synthetic AI-Generated" if ref.is_synthetic else "🌐 Public Real-World SMS"
-                        lbl_color = "#ef4444" if ref.assigned_label == "SCAM" else ("#10b981" if ref.assigned_label == "SAFE" else "#f59e0b")
-                        escaped_msg = html.escape(str(ref.message))
-                        escaped_src = html.escape(str(ref.source_name))
-                        escaped_lic = html.escape(str(ref.license_note))
-                        escaped_lbl = html.escape(str(ref.assigned_label))
-                        escaped_cat = html.escape(str(ref.curated_category).replace("_", " ").title())
-                        ref_html = (
-                            f'<div style="background: rgba(255,255,255,0.04); border-left: 3px solid {lbl_color}; padding: 10px 14px; border-radius: 8px; margin-bottom: 10px;">'
-                            f'<div style="display: flex; justify-content: space-between; font-weight: 600; font-size: 0.9rem; margin-bottom: 4px;">'
-                            f'<span>Case #{i}: <span style="color: {lbl_color};">{escaped_lbl}</span> — {escaped_cat}</span>'
-                            f'<span style="opacity: 0.8; font-size: 0.8rem;">Similarity: {ref.similarity_score * 100:.1f}% | {synth_badge}</span>'
-                            f'</div>'
-                            f'<div style="font-size: 0.88rem; color: #cbd5e1; font-style: italic;">"{escaped_msg}"</div>'
-                            f'<div style="font-size: 0.75rem; color: #94a3b8; margin-top: 4px;">Source: {escaped_src} ({escaped_lic})</div>'
-                            f'</div>'
-                        )
-                        st.markdown(ref_html, unsafe_allow_html=True)
-
-            # ==============================================================================
-            # Transparent Rule-Based Breakdown
-            # ==============================================================================
-            rule_findings = output.rule_results.findings if output.rule_results else []
-            with st.expander("🔍 See Transparent Rule-Based Checks (पारदर्शी नियम जांच)"):
-                st.markdown(
-                    "Scam Shield runs direct heuristic checks for India-specific scam indicators before combining signals with AI analysis:"
+        with top_right:
+            c_theme, c_lang, c_sos = st.columns([1.1, 1.4, 1.6], vertical_alignment="center")
+            with c_theme:
+                st.toggle(
+                    t("dark_mode"),
+                    value=(s.theme == "dark"),
+                    key="theme_toggle",
+                    on_change=on_theme_change,
                 )
-                
-                checks = [
-                    ("Urgent Threats & Fear Tactics", "⏱️", "Urgency / Disconnection / Arrest keywords in English & Hindi"),
-                    ("Credential & KYC Demands", "🔑", "OTP, PIN, Password, Aadhaar or KYC requests"),
-                    ("Suspicious Links & Downloads", "🔗", "Shortened URLs, lookalike domains, or .APK file downloads"),
-                    ("Payment Demands & Lottery Traps", "💸", "Advance fees, lottery prizes, or QR code payment tricks"),
-                    ("Official Organization Mentions", "🏛️", "Electricity boards, banks, police or government agencies")
-                ]
+            with c_lang:
+                st.radio(
+                    t("language_label"),
+                    options=["English", "हिन्दी"],
+                    index=0 if s.lang == "en" else 1,
+                    horizontal=True,
+                    key="lang_radio",
+                    on_change=on_lang_change,
+                    label_visibility="collapsed",
+                )
+            with c_sos:
+                st.markdown(
+                    f'<div class="sos-wrap"><a class="sos" href="tel:1930">{esc(t("lost_money_call"))}</a></div>',
+                    unsafe_allow_html=True,
+                )
 
-                found_categories = {f["category"]: f for f in rule_findings}
+    # Mobile fixed bottom call bar
+    st.markdown(
+        f'<a class="callbar" href="tel:1930">{esc(t("phone_call_bar"))}</a>',
+        unsafe_allow_html=True,
+    )
 
-                for name, icon, desc in checks:
-                    if name in found_categories:
-                        f = found_categories[name]
-                        escaped_details = ", ".join(html.escape(str(d)) for d in f["details"])
-                        st.markdown(f"**{icon} {name}**: 🔴 <span style='color: #f87171; font-weight:600;'>FLAGGED</span> — {escaped_details}", unsafe_allow_html=True)
-                    else:
-                        st.markdown(f"**{icon} {name}**: 🟢 <span style='color: #4ade80;'>Clear</span> — No obvious triggers found", unsafe_allow_html=True)
+    main, side = st.columns([5, 2], gap="large")
 
-            # ==============================================================================
-            # Decision Reconciliation Insights
-            # ==============================================================================
-            if output.reconciliation_notes:
-                with st.expander("⚖️ Decision Reconciliation Insights (निर्णय समन्वय)"):
-                    for note in output.reconciliation_notes:
-                        st.markdown(f"- ℹ️ {html.escape(note)}")
+    with side:
+        st.markdown(render_rail(), unsafe_allow_html=True)
 
-    # Footer
-    st.markdown("---")
-    fcol1, fcol2, fcol3 = st.columns(3)
-    with fcol1:
-        st.markdown("##### 📞 Did you lose money?")
-        st.caption("Call the National Cyber Helpline immediately at **1930** to freeze fraudulent bank transfers within the golden hour.")
+    with main:
+        st.markdown(
+            f'<div class="intro"><h1>{esc(t("intro_heading"))}</h1>'
+            f'<p>{esc(t("intro_p1"))}</p>'
+            + (f'<p class="hi">{esc(t("intro_p2"))}</p>' if s.lang == "en" else "")
+            + '</div>',
+            unsafe_allow_html=True,
+        )
 
-    with fcol2:
-        st.markdown("##### 🌐 Official Portals")
-        st.caption("File official complaints at [cybercrime.gov.in](https://cybercrime.gov.in) and report spam numbers on [sancharsaathi.gov.in](https://sancharsaathi.gov.in).")
+        st.text_area(
+            t("input_label"),
+            key="message_input",
+            height=170,
+            placeholder=t("input_placeholder"),
+        )
+        st.markdown(f'<p class="privacy">{esc(t("privacy_note"))}</p>', unsafe_allow_html=True)
 
-    with fcol3:
-        st.markdown("##### 🛡️ Scam Shield MVP")
-        st.caption("Designed for parents, grandparents, and digital newcomers across India. Protect your family.")
+        c1, c2 = st.columns([3, 1])
+        c1.button(t("check_button"), type="primary", on_click=on_check, disabled=s.pending, use_container_width=True)
+        c2.button(t("clear_button"), key="clear", on_click=on_clear, disabled=s.pending, use_container_width=True)
+
+        with st.expander(t("try_example")):
+            for i in range(0, len(SAMPLE_BUTTON_MAPPING), 2):
+                cols = st.columns(2)
+                for col, (str_key, data_key) in zip(cols, SAMPLE_BUTTON_MAPPING[i:i + 2]):
+                    col.button(
+                        t(str_key),
+                        key=f"sample_{data_key}",
+                        on_click=on_sample,
+                        args=(data_key,),
+                        use_container_width=True,
+                        disabled=s.pending,
+                    )
+
+        # Run analysis in pass so buttons render disabled meanwhile
+        if s.pending:
+            text = s.message_input.strip()
+            try:
+                with st.spinner(t("spinner_text")):
+                    output = get_pipeline().analyze(text, api_key=get_gemini_api_key(), language=s.lang)
+                s.result = {"text": text, "output": output}
+            except Exception:
+                s.result, s.error = None, True
+            s.pending = False
+            st.rerun()
+
+        if s.empty:
+            st.markdown(
+                f'<div class="note note-info"><b>{esc(t("empty_title"))}</b>{esc(t("empty_body"))}</div>',
+                unsafe_allow_html=True,
+            )
+        elif s.error:
+            st.markdown(
+                f'<div class="note note-error"><b>{esc(t("error_title"))}</b>{esc(t("error_body"))}</div>',
+                unsafe_allow_html=True,
+            )
+        elif s.result and s.result["text"] == s.message_input.strip():
+            render_result(s.result["output"])
 
 
 if __name__ == "__main__":
