@@ -12,6 +12,8 @@ from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 import streamlit as st
 
+from src.pipeline import ScamShieldPipeline, PipelineOutput
+
 # Load environment variables from .env file (with override=True to detect user updates)
 load_dotenv(override=True)
 
@@ -19,6 +21,12 @@ load_dotenv(override=True)
 MODEL_NAME = "gemini-3.5-flash-lite"
 REQUEST_TIMEOUT_MS = 20000  # 20 seconds finite timeout
 MAX_RETRIES = 0             # SDK retries are bounded; no multiple long retry loops
+
+
+@st.cache_resource
+def get_pipeline() -> ScamShieldPipeline:
+    """Initializes and caches the end-to-end detection pipeline."""
+    return ScamShieldPipeline()
 
 # ==============================================================================
 # 1. DATA MODELS & SCHEMAS
@@ -589,6 +597,34 @@ def render_app():
             margin-top: 0.75rem;
         }
 
+        .dataset-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(16, 185, 129, 0.15);
+            border: 1px solid rgba(16, 185, 129, 0.4);
+            color: #6ee7b7;
+            padding: 5px 16px;
+            border-radius: 9999px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-top: 0.5rem;
+        }
+
+        .dataset-badge-standalone {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(245, 158, 11, 0.15);
+            border: 1px solid rgba(245, 158, 11, 0.4);
+            color: #fcd34d;
+            padding: 5px 16px;
+            border-radius: 9999px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-top: 0.5rem;
+        }
+
         .verdict-card {
             border-radius: 18px;
             padding: 28px;
@@ -754,22 +790,29 @@ def render_app():
             "For your security, never paste passwords, MPINs, OTPs, or sensitive banking details."
         )
 
-    # Hero Header
-    st.markdown(
-        """
-        <div class="hero-container">
-            <div class="hero-title">🛡️ Scam Shield (स्कैम शील्ड)</div>
-            <div class="hero-subtitle">
-                Instant, elder-friendly fraud protection for WhatsApp, SMS, and email messages in India.
-                Simple answers. Zero confusing tech jargon.
-            </div>
-            <div>
-                <span class="helpline-badge">🚨 National Cyber Helpline: Dial 1930 (Free & 24x7)</span>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True
+    # Initialize cached detection pipeline
+    pipeline = get_pipeline()
+
+    badge_class = "dataset-badge" if pipeline.is_dataset_available else "dataset-badge-standalone"
+    badge_text = (
+        f"🧠 Dataset Intelligence: {pipeline.train_records_count:,} Verified Reference Cases Active"
+        if pipeline.is_dataset_available
+        else "⚙️ Standalone Heuristic Engine Active (No External Dataset)"
     )
+
+    # Hero Header (constructed without multiline indentation to prevent Markdown code block misinterpretation)
+    hero_html = (
+        '<div class="hero-container">'
+        '<div class="hero-title">🛡️ Scam Shield (स्कैम शील्ड)</div>'
+        '<div class="hero-subtitle">'
+        'Instant, elder-friendly fraud protection for WhatsApp, SMS, and email messages in India. '
+        'Simple answers. Zero confusing tech jargon.'
+        '</div>'
+        '<div><span class="helpline-badge">🚨 National Cyber Helpline: Dial 1930 (Free & 24x7)</span></div>'
+        f'<div><span class="{badge_class}">{badge_text}</span></div>'
+        '</div>'
+    )
+    st.markdown(hero_html, unsafe_allow_html=True)
 
     # Instructions & Quick Samples Section
     st.markdown("#### 💡 Quick Test: Click a sample message or paste your own below")
@@ -816,49 +859,30 @@ def render_app():
         if not cleaned_text:
             st.warning("⚠️ Please paste or type a message first to analyze.")
         else:
-            # Step 1: Execute rule-based checks
-            rule_results = analyze_rules(cleaned_text)
             api_key = get_gemini_api_key()
 
-            raw_analysis = None
-            error_info = None
-
-            # Streamlit loading spinner strictly wraps the analysis execution
+            # Execute unified detection pipeline (Rules -> Dataset Matching -> Gemini -> Decision)
             with st.spinner("Analyzing message safety with Scam Shield intelligence..."):
-                if api_key:
-                    raw_analysis = analyze_with_gemini(cleaned_text, rule_results, api_key)
-                    if "error_type" in raw_analysis:
-                        error_info = raw_analysis
-                        # Fallback to transparent heuristics
-                        analysis = analyze_heuristic_fallback(cleaned_text, rule_results)
-                        analysis["is_ai"] = False
-                        analysis["fallback_reason"] = error_info["error_title"]
-                    else:
-                        analysis = raw_analysis
-                        analysis["is_ai"] = True
-                else:
-                    # Fallback when key is missing
-                    analysis = analyze_heuristic_fallback(cleaned_text, rule_results)
-                    analysis["is_ai"] = False
-                    analysis["fallback_reason"] = "No API Key Configured"
+                output: PipelineOutput = pipeline.analyze(cleaned_text, api_key=api_key)
 
             # User-friendly notice when heuristic fallback was used
-            if not analysis.get("is_ai", False):
+            if not output.is_ai:
+                fallback_title = output.fallback_reason or "Offline Mode"
                 st.info(
-                    "ℹ️ **Notice**: AI analysis is temporarily unavailable. "
-                    "Scam Shield is using its built-in rule-based checks."
+                    f"ℹ️ **Notice**: AI analysis is currently running in local intelligence mode ({fallback_title}). "
+                    "Scam Shield is using its built-in rule heuristics and curated dataset reference patterns."
                 )
 
             # ==============================================================================
             # Result Card Presentation
             # ==============================================================================
-            verdict = analysis.get("verdict", "SUSPICIOUS").upper()
-            scam_type = analysis.get("scam_type", "Suspicious Alert")
-            explanation = analysis.get("explanation", "Exercise high caution.")
-            red_flags = analysis.get("red_flags", [])
-            recommended_actions = analysis.get("recommended_actions", [])
-            confidence = analysis.get("confidence", "MEDIUM")
-            is_ai = analysis.get("is_ai", False)
+            verdict = output.verdict.upper()
+            scam_type = output.scam_type
+            explanation = output.explanation
+            red_flags = output.red_flags
+            recommended_actions = output.recommended_actions
+            confidence = output.confidence
+            is_ai = output.is_ai
 
             # Visual styling depending on verdict and mode
             if verdict == "SCAM":
@@ -874,7 +898,10 @@ def render_app():
                 verdict_icon = "⚠️"
                 verdict_badge = "SUSPICIOUS - PROCEED WITH CAUTION"
 
-            mode_label = "🤖 AI Assisted" if is_ai else "⚙️ Rule-Based Heuristics (Offline Fallback)"
+            if is_ai:
+                mode_label = "🤖 AI Assisted (Dataset-Informed)" if output.is_dataset_informed else "🤖 AI Assisted"
+            else:
+                mode_label = "⚙️ Dataset-Informed Heuristics" if output.is_dataset_informed else "⚙️ Rule-Based Heuristics (Offline)"
 
             # Sanitize all dynamic content to prevent HTML injection and layout breaks
             safe_verdict_badge = html.escape(str(verdict_badge))
@@ -883,7 +910,7 @@ def render_app():
             safe_scam_type = html.escape(str(scam_type))
             safe_explanation = html.escape(str(explanation))
 
-            # Build Warning Signs / Red Flags items (escape content, handle empty list)
+            # Build Warning Signs / Red Flags items
             if red_flags:
                 valid_flags = [str(f).strip() for f in red_flags if str(f).strip()]
             else:
@@ -897,7 +924,7 @@ def render_app():
             else:
                 flags_html = '<div class="red-flag-item" style="border-left-color: #94a3b8; background: rgba(148, 163, 184, 0.1);">No specific warning signs identified.</div>'
 
-            # Build Practical Next Steps items (escape content, handle empty list)
+            # Build Practical Next Steps items
             if recommended_actions:
                 valid_actions = [str(a).strip() for a in recommended_actions if str(a).strip()]
             else:
@@ -911,8 +938,7 @@ def render_app():
             else:
                 actions_html = '<div class="action-step-item" style="border-left-color: #94a3b8; background: rgba(148, 163, 184, 0.1);">No immediate action required. Stay vigilant.</div>'
 
-            # Construct verdict card HTML without leading spaces or blank lines so Markdown
-            # engines never misinterpret sections as indented code blocks (<pre><code>)
+            # Construct verdict card HTML
             card_html = (
                 f'<div class="verdict-card {verdict_class}">'
                 f'<div class="verdict-header">'
@@ -945,15 +971,44 @@ def render_app():
             st.markdown(
                 '<div class="disclaimer-box">'
                 '<strong>⚖️ Independent Safety Tool:</strong> Scam Shield is an educational and fraud-prevention aid. '
-                'This result is an automated AI risk assessment and has <strong>NOT</strong> been verified or endorsed by '
+                'This result is an automated risk assessment and has <strong>NOT</strong> been verified or endorsed by '
                 'any bank, police authority, or government department.'
                 '</div>',
                 unsafe_allow_html=True
             )
 
             # ==============================================================================
+            # Dataset Reference Intelligence (Train Partition Matches)
+            # ==============================================================================
+            if output.dataset_matches and output.dataset_matches.matched_references:
+                with st.expander("📚 See Dataset Reference Matches (डेटासेट संदर्भ मामले)"):
+                    st.markdown(
+                        "Scam Shield retrieved similar verified reference patterns from its curated Indian scam dataset (Train Partition) to evaluate this message:"
+                    )
+                    for i, ref in enumerate(output.dataset_matches.matched_references, 1):
+                        synth_badge = "🤖 Synthetic AI-Generated" if ref.is_synthetic else "🌐 Public Real-World SMS"
+                        lbl_color = "#ef4444" if ref.assigned_label == "SCAM" else ("#10b981" if ref.assigned_label == "SAFE" else "#f59e0b")
+                        escaped_msg = html.escape(str(ref.message))
+                        escaped_src = html.escape(str(ref.source_name))
+                        escaped_lic = html.escape(str(ref.license_note))
+                        escaped_lbl = html.escape(str(ref.assigned_label))
+                        escaped_cat = html.escape(str(ref.curated_category).replace("_", " ").title())
+                        ref_html = (
+                            f'<div style="background: rgba(255,255,255,0.04); border-left: 3px solid {lbl_color}; padding: 10px 14px; border-radius: 8px; margin-bottom: 10px;">'
+                            f'<div style="display: flex; justify-content: space-between; font-weight: 600; font-size: 0.9rem; margin-bottom: 4px;">'
+                            f'<span>Case #{i}: <span style="color: {lbl_color};">{escaped_lbl}</span> — {escaped_cat}</span>'
+                            f'<span style="opacity: 0.8; font-size: 0.8rem;">Similarity: {ref.similarity_score * 100:.1f}% | {synth_badge}</span>'
+                            f'</div>'
+                            f'<div style="font-size: 0.88rem; color: #cbd5e1; font-style: italic;">"{escaped_msg}"</div>'
+                            f'<div style="font-size: 0.75rem; color: #94a3b8; margin-top: 4px;">Source: {escaped_src} ({escaped_lic})</div>'
+                            f'</div>'
+                        )
+                        st.markdown(ref_html, unsafe_allow_html=True)
+
+            # ==============================================================================
             # Transparent Rule-Based Breakdown
             # ==============================================================================
+            rule_findings = output.rule_results.findings if output.rule_results else []
             with st.expander("🔍 See Transparent Rule-Based Checks (पारदर्शी नियम जांच)"):
                 st.markdown(
                     "Scam Shield runs direct heuristic checks for India-specific scam indicators before combining signals with AI analysis:"
@@ -967,14 +1022,23 @@ def render_app():
                     ("Official Organization Mentions", "🏛️", "Electricity boards, banks, police or government agencies")
                 ]
 
-                found_categories = {f["category"]: f for f in rule_results.get("findings", [])}
+                found_categories = {f["category"]: f for f in rule_findings}
 
                 for name, icon, desc in checks:
                     if name in found_categories:
                         f = found_categories[name]
-                        st.markdown(f"**{icon} {name}**: 🔴 <span style='color: #f87171; font-weight:600;'>FLAGGED</span> — {', '.join(f['details'])}", unsafe_allow_html=True)
+                        escaped_details = ", ".join(html.escape(str(d)) for d in f["details"])
+                        st.markdown(f"**{icon} {name}**: 🔴 <span style='color: #f87171; font-weight:600;'>FLAGGED</span> — {escaped_details}", unsafe_allow_html=True)
                     else:
                         st.markdown(f"**{icon} {name}**: 🟢 <span style='color: #4ade80;'>Clear</span> — No obvious triggers found", unsafe_allow_html=True)
+
+            # ==============================================================================
+            # Decision Reconciliation Insights
+            # ==============================================================================
+            if output.reconciliation_notes:
+                with st.expander("⚖️ Decision Reconciliation Insights (निर्णय समन्वय)"):
+                    for note in output.reconciliation_notes:
+                        st.markdown(f"- ℹ️ {html.escape(note)}")
 
     # Footer
     st.markdown("---")
