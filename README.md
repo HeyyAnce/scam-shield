@@ -114,3 +114,13 @@ If the live app is missing reference examples, confirm that `data/dataset` is de
 - Help with a complaint about your bank: RBI contact centre, toll-free **14448**.
 
 Scam Shield is a project made for a hackathon. It is not connected to any bank, police body or government department, and none of them has checked or approved its results.
+
+## Turquoise web frontend
+
+The HTML/CSS/JavaScript frontend is in `frontend/`; `web_server.py` provides the Python API. The original Streamlit entrypoint remains `app.py`.
+
+Install `web_requirements.txt`, set `GEMINI_API_KEY` in your environment or local `.env`, then run `python -m uvicorn web_server:app --host 127.0.0.1 --port 8765`. Open http://127.0.0.1:8765. Keep `.env` out of Git.
+
+Includes Home, Safety Guide, Help, About/Privacy, light/dark turquoise themes, message analysis and reviewed screenshot extraction. Result labels map SCAM to Scam, SUSPICIOUS to Likely scam, and SAFE to Safe; no result verifies the sender or guarantees safety.
+
+English/Hindi switching is available across the web interface and requests AI explanations in the selected language. Offline explanations and reference messages may remain in their original language. Current limit: feedback downloads a draft and does not send to an inbox. Public hosting, feedback delivery and final retention/contact details still need configuration. Pushing these files does not replace the Streamlit deployment with the new web server.
