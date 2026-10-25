@@ -19,6 +19,12 @@ from src.image_reader import prepare_image, extract_text, ImageInputError
 
 load_dotenv(override=True)
 
+# Keep the original UI available as an explicit server-side rollback option.
+if os.getenv("SCAM_SHIELD_LEGACY_UI") != "1":
+    from cloud_ui import main as render_web_frontend
+    render_web_frontend()
+    st.stop()
+
 # Reference examples come from a mostly synthetic, not-yet-reviewed dataset.
 # Set to False to hide them from users until the data is approved for display.
 SHOW_REFERENCE_EXAMPLES = True

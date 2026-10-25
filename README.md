@@ -117,10 +117,10 @@ Scam Shield is a project made for a hackathon. It is not connected to any bank, 
 
 ## Turquoise web frontend
 
-The HTML/CSS/JavaScript frontend is in `frontend/`; `web_server.py` provides the Python API. The original Streamlit entrypoint remains `app.py`.
+The HTML/CSS/JavaScript frontend is in `frontend/`; `web_server.py` provides the Python API. The Streamlit entrypoint `app.py` serves the same frontend through `cloud_ui.py` on the existing public URL.
 
 Install `web_requirements.txt`, set `GEMINI_API_KEY` in your environment or local `.env`, then run `python -m uvicorn web_server:app --host 127.0.0.1 --port 8765`. Open http://127.0.0.1:8765. Keep `.env` out of Git.
 
 Includes Home, Safety Guide, Help, About/Privacy, light/dark turquoise themes, message analysis and reviewed screenshot extraction. Result labels map SCAM to Scam, SUSPICIOUS to Likely scam, and SAFE to Safe; no result verifies the sender or guarantees safety.
 
-English/Hindi switching is available across the web interface and requests AI explanations in the selected language. Offline explanations and reference messages may remain in their original language. Current limit: feedback downloads a draft and does not send to an inbox. Public hosting, feedback delivery and final retention/contact details still need configuration. Pushing these files does not replace the Streamlit deployment with the new web server.
+English/Hindi switching is available across the web interface and requests AI explanations in the selected language. Offline explanations and reference messages may remain in their original language. Current limit: feedback downloads a draft and does not send to an inbox. The public Streamlit deployment uses `cloud_ui.py` and the existing server-side Gemini secret; no API key is exposed to the browser. Feedback delivery is not connected. Set the server environment variable `SCAM_SHIELD_LEGACY_UI=1` only for an intentional rollback to the original UI. The FastAPI entrypoint remains available for standalone local use.
